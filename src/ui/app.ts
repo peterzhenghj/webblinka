@@ -138,26 +138,21 @@ export function mount(root: HTMLElement): void {
       "reach — the software equivalent of unplugging it.",
   });
 
-  const connectPrompt = el("div", { class: "connect-prompt" }, [
+  // Shown until there is a device, then retired: once you are connected the
+  // pitch is spent, and everything it said about the board is in the Common tab.
+  const intro = el("div", { class: "intro" }, [
     el("p", {
-      class: "hint",
       text:
         "Plug in an MCP2221 or MCP2221A and grant access. Adafruit's Blinka and " +
         "CircuitPython libraries run unmodified in a Python runtime inside this " +
         "page and talk to the chip over WebHID — no server, no install.",
     }),
-    connect,
     el("p", { class: "aside" }, [
       el("span", { text: "No adapter to hand? You can " }),
       demo,
       el("span", { text: " — everything works, but the readings are invented." }),
     ]),
   ]);
-
-  // Replaces the prompt once there is a device: at that point the pitch is spent
-  // and what matters is what you are talking to.
-  const connected = el("div", { class: "connected-summary", hidden: true });
-  const intro = el("div", { class: "body" }, [connectPrompt, connected]);
 
   // Demo mode presents an interface identical to the real one, so every reading
   // it produces has to be labelled as invented. Otherwise a simulated GPS fix
@@ -179,15 +174,18 @@ export function mount(root: HTMLElement): void {
         el("h1", { text: "webblinka" }),
         el("p", { text: "Control I2C hardware from your browser using real CircuitPython drivers." }),
       ]),
+      // Connecting is the one action available from anywhere, so it lives with
+      // the state it changes rather than in a panel of its own.
+      el("div", { class: "masthead-actions" }, [status.node, connect]),
     ]),
     demoBanner,
-    el("section", { class: "panel" }, [
-      el("header", {}, [el("h2", { text: "Connection" }), status.node]),
-      intro,
-    ]),
+    intro,
     tabs.root,
     log.root,
   );
+
+  // Reset is a chip-level recovery, so it belongs with the chip's own readouts.
+  common.boardActions.append(reset);
 
   const ui: Ui = {
     connect,
@@ -201,8 +199,7 @@ export function mount(root: HTMLElement): void {
     i2c,
     console: console_,
     deviceManager,
-    connectPrompt,
-    connected,
+    intro,
     demoMode: false,
   };
 
@@ -251,8 +248,7 @@ interface Ui {
   i2c: I2cPanel;
   console: ConsolePanel;
   deviceManager: DeviceManager;
-  connectPrompt: HTMLElement;
-  connected: HTMLElement;
+  intro: HTMLElement;
   /** Readings are software-generated, and every one of them must say so. */
   demoMode: boolean;
 }
@@ -284,25 +280,17 @@ async function start(
 
     const board = await session.call<BoardInfo>("connect");
     const runtime = await session.call<RuntimeInfo>("runtime_info");
-    ui.common.showBoard(board, runtime);
+    ui.common.showBoard(board, runtime, label);
     ui.i2c.enable();
     await ui.gpio.enable();
     await ui.console.enable();
     ui.tabs.enable();
 
-    // The pitch has done its job; show what we are talking to instead.
-    ui.connectPrompt.hidden = true;
-    ui.connected.hidden = false;
+    // The pitch has done its job, and the Common tab now says everything it
+    // said about the board. Connect goes too -- there is nothing left to connect.
+    ui.intro.hidden = true;
+    ui.connect.hidden = true;
     ui.reset.hidden = false;
-    ui.connected.replaceChildren(
-      el("dl", { class: "facts" }, [
-        el("dt", { text: "Device" }),
-        el("dd", { text: label }),
-        el("dt", { text: "Chip" }),
-        el("dd", { text: `${board.chip} · Blinka ${runtime.blinka} · Python ${runtime.python}` }),
-      ]),
-      el("div", { class: "controls" }, [ui.reset]),
-    );
 
     // "Demo" rather than "Connected": nothing is connected, and the pill is the
     // one thing on screen in every tab.
@@ -315,6 +303,7 @@ async function start(
   } catch (err) {
     ui.status.set("Failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");
+    ui.connect.hidden = false;
     ui.connect.disabled = false;
     ui.demo.disabled = false;
   }

@@ -52,12 +52,21 @@ body {
 
 .masthead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1rem 1.5rem;
   flex-wrap: wrap;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--line);
+}
+
+/* Status and Connect sit with the state they describe and change, rather than
+   in a panel that is only useful for the few seconds before you connect. */
+.masthead-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
 }
 
 .masthead h1 {
@@ -273,14 +282,20 @@ button.linklike:hover:not(:disabled) {
   color: var(--text);
 }
 
-.connect-prompt .aside {
-  margin: 0.75rem 0 0;
-  font-size: 0.85rem;
+.intro {
+  max-width: 46rem;
+  margin-top: 1.5rem;
   color: var(--muted);
+  font-size: 0.92rem;
 }
 
-.connected-summary .controls {
-  margin-top: 0.9rem;
+.intro p {
+  margin: 0 0 0.6rem;
+}
+
+.intro .aside {
+  margin: 0;
+  font-size: 0.85rem;
 }
 
 select {

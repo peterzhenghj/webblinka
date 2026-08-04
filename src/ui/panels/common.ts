@@ -59,6 +59,8 @@ const POLL_INTERVAL_MS = 1000;
  */
 export class CommonPanel {
   readonly root: HTMLElement;
+  /** Where the shell hangs chip-level actions, such as Reset chip. */
+  readonly boardActions: HTMLElement;
   readonly #handlers: CommonHandlers;
   readonly #board: HTMLElement;
   readonly #values = new Map<string, HTMLElement>();
@@ -74,6 +76,7 @@ export class CommonPanel {
 
     const boardPanel = panel("Board");
     this.#board = boardPanel.body;
+    this.boardActions = boardPanel.actions;
     this.#board.append(el("p", { class: "hint", text: "Not connected." }));
 
     // The converter only reads a pin designated as an ADC, so a channel whose
@@ -110,9 +113,11 @@ export class CommonPanel {
     this.root.append(boardPanel.root, adc.root, interrupt.root, i2c.root);
   }
 
-  showBoard(board: BoardInfo, runtime: RuntimeInfo): void {
+  showBoard(board: BoardInfo, runtime: RuntimeInfo, device: string): void {
     this.#board.replaceChildren(
       el("dl", { class: "facts" }, [
+        el("dt", { text: "Device" }),
+        el("dd", { text: device }),
         el("dt", { text: "Chip" }),
         el("dd", { text: board.chip }),
         el("dt", { text: "Board" }),
