@@ -163,8 +163,7 @@ export function mount(root: HTMLElement): void {
     el("span", {
       text:
         " — no hardware is connected. Every reading below is generated in " +
-        "software, including the GPS position, which is a fixed point in San " +
-        "Francisco. Press Connect MCP2221 to use a real device.",
+        "software.. Press Connect MCP2221 to use a real device.",
     }),
   ]);
 
@@ -312,12 +311,15 @@ async function start(
     // said about the board.
     ui.intro.hidden = true;
     ui.reset.hidden = false;
-    // Connected to hardware there is nothing left to connect, but the button
-    // keeps its box rather than being removed -- the header must not reflow
-    // around it. In demo mode it stays live and enabled, because swapping the
-    // simulator for a real adapter is what someone in demo mode does next, and
-    // the demo banner tells them to press exactly this button.
-    ui.connect.style.visibility = ui.demoMode ? "visible" : "hidden";
+    // Connected to hardware there is nothing left to connect, so the button
+    // goes and the pill sits flush right -- an empty reserved box beside it
+    // just looks broken. This is a one-way transition, not the resizing that
+    // shoves the header about while connecting.
+    //
+    // In demo mode it stays, live and enabled: swapping the simulator for a
+    // real adapter is what someone in demo mode does next, and the demo banner
+    // tells them to press exactly this button.
+    ui.connect.hidden = !ui.demoMode;
     ui.connect.disabled = !ui.demoMode;
 
     // "Demo" rather than "Connected": nothing is connected, and the pill is the
@@ -329,7 +331,7 @@ async function start(
   } catch (err) {
     ui.status.set("Failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");
-    ui.connect.style.visibility = "visible";
+    ui.connect.hidden = false;
     ui.connect.disabled = false;
     ui.demo.disabled = false;
   }

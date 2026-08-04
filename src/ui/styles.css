@@ -80,10 +80,18 @@ body {
   margin: 0;
 }
 
+/* Setting display above beats the user-agent's [hidden] rule, so hiding the
+   button would otherwise leave it on screen and still taking up the row. */
+.masthead-actions button[hidden] {
+  display: none;
+}
+
 /* Fixed box, so "Disconnected", "Connecting…" and "Connected" all occupy the
-   same space and the button beside it never moves. */
+   same space and the button beside it never moves while it is there. Sized to
+   the longest of them rather than generously, so the pill does not read as
+   mostly empty once it is the only thing in the row. */
 .masthead-actions .pill {
-  min-width: 10.5rem;
+  min-width: 8.5rem;
   padding: 0 0.9rem;
 }
 
