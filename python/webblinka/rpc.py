@@ -55,5 +55,5 @@ def _load_handlers() -> None:
     if _HANDLERS:
         return
     # Imported for their @handler side effects.
-    from . import console, session  # noqa: F401
+    from . import console, mcp2221_chip, session  # noqa: F401
     from .drivers import gps_pa1010d  # noqa: F401

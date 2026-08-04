@@ -43,6 +43,28 @@ JSPI.
 **Requirements: Chrome or Edge 137+ on desktop.** WebHID is Chromium-only and
 JSPI shipped in 137. The site says so plainly if either is missing.
 
+## The tabs
+
+Laid out after [johntalton/webapp-device-playground][playground], which gets the
+shape of an adapter UI right.
+
+- **Common** — the Status/Set Parameters report, polled once a second: live ADC
+  counts, the I²C engine's state machine, the interrupt latch, silicon revision.
+- **USB Descriptors** — the identity in the chip's flash. Read-only; see
+  [`mcp2221_chip.py`](python/webblinka/mcp2221_chip.py) for why.
+- **GPIO** — every pin designation the chip offers, not just in/out: SSPND,
+  USBCFG, the UART Rx/Tx and I²C activity LEDs, the clock output, interrupt on
+  change, ADC and DAC. Plus the chip-wide clock, reference-voltage and
+  interrupt-edge settings those designations depend on.
+- **I²C** — bus scan and the GPS panel.
+- **Python** — the REPL and the PyPI installer.
+
+`input`/`output`/`analog_in`/`analog_out` go through `digitalio` and `analogio`,
+because running the real CircuitPython API is the point. The rest are chip
+functions CircuitPython has no vocabulary for, so
+[`mcp2221_chip.py`](python/webblinka/mcp2221_chip.py) speaks the datasheet's
+report protocol over the HID transport Blinka already owns. Still no fork.
+
 ## Demo mode
 
 No adapter? [`src/hid/mcp2221-emulator.ts`](src/hid/mcp2221-emulator.ts) is a
@@ -80,7 +102,9 @@ bootstrap code rather than a copy of them.
    values. Register it in `python/webblinka/rpc.py`.
 2. Add its wheel to `REQUIREMENTS` in `scripts/fetch_wheels.py` and re-run
    `npm run wheels`.
-3. Add a panel under `src/ui/panels/` and wire it up in `src/ui/app.ts`.
+3. Add a panel under `src/ui/panels/` and give it a tab in `src/ui/app.ts`. A
+   panel that polls should stop on the tab's `onHide` — every tick is real
+   traffic competing for the bus.
 4. For demo mode and tests, add a `VirtualI2cDevice` under `src/hid/devices/`.
 
 See [`gps_pa1010d.py`](python/webblinka/drivers/gps_pa1010d.py) and
@@ -98,3 +122,4 @@ cold start does not depend on PyPI.
 
 [mcp2221]: https://www.microchip.com/en-us/product/MCP2221
 [jspi]: https://developer.chrome.com/blog/webassembly-jspi
+[playground]: https://github.com/johntalton/webapp-device-playground

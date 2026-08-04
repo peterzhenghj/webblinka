@@ -19,6 +19,7 @@ const CMD_GET_GPIO = 0x51;
 const CMD_SET_SRAM = 0x60;
 const CMD_GET_SRAM = 0x61;
 const CMD_RESET = 0x70;
+const CMD_READ_FLASH = 0xb0;
 const CMD_I2C_READ_DATA = 0x40;
 const CMD_I2C_WRITE = 0x90;
 const CMD_I2C_READ = 0x91;
@@ -40,8 +41,36 @@ const MAX_I2C_CHUNK = 60;
 
 /** GP pin designations, matching MCP2221.GP_* in Blinka. */
 export const GP_GPIO = 0b000;
+export const GP_DEDICATED = 0b001;
 export const GP_ALT0 = 0b010; // ADC
 export const GP_ALT1 = 0b011; // DAC
+export const GP_ALT2 = 0b100; // interrupt detection, GP1 only
+
+// Read Flash Data sub-commands. Only the read side exists here; webblinka never
+// writes flash, so neither does its emulator.
+const FLASH_CHIP_SETTINGS = 0x00;
+const FLASH_USB_MANUFACTURER = 0x02;
+const FLASH_USB_PRODUCT = 0x03;
+const FLASH_USB_SERIAL = 0x04;
+const FLASH_FACTORY_SERIAL = 0x05;
+
+const USB_STRING_DESCRIPTOR_TYPE = 0x03;
+
+/** What a stock MCP2221A reports about itself, for demo mode to have content. */
+const IDENTITY = {
+  manufacturer: "Microchip Technology Inc.",
+  product: "MCP2221 USB-I2C/UART Combo",
+  serialNumber: "0001020304",
+  factorySerialNumber: "01234567",
+  vendorId: 0x04d8,
+  productId: 0x00dd,
+  /** Bit 6 self-powered, bit 5 remote wake. Bus-powered with remote wake. */
+  powerAttributes: 0x20,
+  /** Reported in 2 mA units, so 100 mA. */
+  mAUnits: 50,
+  hardwareRevision: "A6",
+  firmwareRevision: "12",
+};
 
 interface GpPin {
   mode: number;
@@ -76,6 +105,13 @@ export class Mcp2221Emulator {
   #addrNacked = false;
   #write: PendingWrite | null = null;
   #read: PendingRead | null = null;
+
+  // SRAM configuration bytes, in the packing the Get SRAM response uses.
+  #chipByte = 0b1111_0000; // CDC enumeration + all three LEDs, unsecured
+  #clockByte = (0b10 << 3) | 0b101; // 50% duty at 1.5 MHz
+  #dacByte = (0b01 << 6) | (0b1 << 5); // 1.024 V from Vrm, value 0
+  #adcByte = (0b01 << 3) | (0b1 << 2); // 1.024 V from Vrm, no interrupt edges
+  #interruptDetected = false;
 
   attach(device: VirtualI2cDevice): void {
     this.#bus.set(device.address, device);
@@ -141,6 +177,9 @@ export class Mcp2221Emulator {
       case CMD_I2C_READ_DATA:
         this.#i2cGetData(reply);
         break;
+      case CMD_READ_FLASH:
+        this.#readFlash(report[1] ?? 0, reply);
+        break;
       default:
         reply[1] = 0x01; // unsupported command
         break;
@@ -171,7 +210,21 @@ export class Mcp2221Emulator {
     reply[10] = (total >> 8) & 0xff;
     reply[11] = done & 0xff;
     reply[12] = (done >> 8) & 0xff;
+    reply[13] = done & 0xff; // data buffer counter
+    reply[14] = this.#clockDivider;
+    reply[15] = 0x0a; // I2C timeout, ms
+    reply[16] = (this.#write?.address ?? 0) << 1;
     reply[20] = this.#addrNacked ? FLAG_ADDR_NACK : 0x00;
+    reply[21] = 0x01; // I2C engine initialised
+    reply[22] = 1; // SCL idles high
+    reply[23] = 1; // SDA idles high
+    reply[24] = this.#interruptDetected ? 1 : 0;
+
+    // Hardware and firmware revision, four ASCII bytes.
+    for (let i = 0; i < 2; i++) {
+      reply[46 + i] = IDENTITY.hardwareRevision.charCodeAt(i);
+      reply[48 + i] = IDENTITY.firmwareRevision.charCodeAt(i);
+    }
 
     // ADC channels 0..2 sit at bytes 50/51, 52/53, 54/55 -- Blinka reads them as
     // resp[49 + 2*pin] << 8 | resp[48 + 2*pin] for GP1..GP3.
@@ -207,21 +260,111 @@ export class Mcp2221Emulator {
 
   // --------------------------------------------------------------- 0x60/0x61
 
+  /**
+   * Every field of Set SRAM is skipped unless its high "alter" bit is set,
+   * which is what lets callers change one setting without disturbing the rest.
+   */
   #setSram(report: Uint8Array): void {
-    if ((report[4] ?? 0) & 0x80) this.#dac = (report[4] ?? 0) & 0b11111;
-    if ((report[7] ?? 0) & 0x80) {
-      for (let pin = 0; pin < 4; pin++) {
-        this.#pins[pin]!.mode = (report[8 + pin] ?? 0) & 0x07;
+    const clock = report[2] ?? 0;
+    const dacRef = report[3] ?? 0;
+    const dacValue = report[4] ?? 0;
+    const adcRef = report[5] ?? 0;
+    const interrupt = report[6] ?? 0;
+
+    if (clock & 0x80) this.#clockByte = clock & 0b0001_1111;
+    if (dacRef & 0x80) {
+      // The Set command packs the DAC reference as (voltage << 1) | option,
+      // while the Get response reports voltage at bits 6-7 and option at bit 5.
+      // The two layouts are not symmetric; the datasheet is like that.
+      const voltage = (dacRef >> 1) & 0b11;
+      const option = dacRef & 0b1;
+      this.#dacByte = (voltage << 6) | (option << 5) | (this.#dacByte & 0b11111);
+    }
+    if (dacValue & 0x80) {
+      this.#dac = dacValue & 0b11111;
+      this.#dacByte = (this.#dacByte & ~0b11111) | this.#dac;
+    }
+    if (adcRef & 0x80) {
+      const voltage = (adcRef >> 1) & 0b11;
+      const option = adcRef & 0b1;
+      this.#adcByte = (this.#adcByte & 0b0110_0000) | (voltage << 3) | (option << 2);
+    }
+    if (interrupt & 0x80) {
+      if (interrupt & 0b1) this.#interruptDetected = false; // clear the latch
+      const edgeBits = (interrupt >> 1) & 0b1111;
+      if (edgeBits & 0b1000) {
+        const positive = (edgeBits & 0b0100) !== 0;
+        const negative = (edgeBits & 0b0001) !== 0;
+        this.#adcByte =
+          (this.#adcByte & ~0b0110_0000) | (Number(negative) << 6) | (Number(positive) << 5);
       }
     }
-    // Bytes 3 and 5 carry the DAC/ADC voltage references, which change nothing
-    // observable here -- the emulated ADC is driven directly via setAdc().
+    if ((report[7] ?? 0) & 0x80) {
+      for (let pin = 0; pin < 4; pin++) {
+        const byte = report[8 + pin] ?? 0;
+        const state = this.#pins[pin]!;
+        state.mode = byte & 0b111;
+        state.direction = (byte >> 3) & 0b1;
+        state.value = (byte >> 4) & 0b1;
+      }
+    }
   }
 
   #getSram(reply: Uint8Array): void {
+    reply[2] = 18; // chip settings length
+    reply[3] = 4; // GP settings length
+    reply[4] = this.#chipByte;
+    reply[5] = this.#clockByte;
+    reply[6] = this.#dacByte;
+    reply[7] = this.#adcByte;
+    reply[8] = IDENTITY.vendorId & 0xff;
+    reply[9] = (IDENTITY.vendorId >> 8) & 0xff;
+    reply[10] = IDENTITY.productId & 0xff;
+    reply[11] = (IDENTITY.productId >> 8) & 0xff;
+    reply[12] = IDENTITY.powerAttributes;
+    reply[13] = IDENTITY.mAUnits;
+    // Bytes 14-21 are the currently supplied access password; left zeroed.
     for (let pin = 0; pin < 4; pin++) {
       const state = this.#pins[pin]!;
       reply[22 + pin] = state.mode | (state.direction << 3) | (state.value << 4);
+    }
+  }
+
+  // -------------------------------------------------------------- 0xB0 flash
+
+  #readFlash(subCommand: number, reply: Uint8Array): void {
+    switch (subCommand) {
+      case FLASH_CHIP_SETTINGS:
+        reply[2] = 10;
+        reply[4] = this.#chipByte;
+        reply[5] = this.#clockByte;
+        reply[6] = this.#dacByte;
+        reply[7] = this.#adcByte;
+        reply[8] = IDENTITY.vendorId & 0xff;
+        reply[9] = (IDENTITY.vendorId >> 8) & 0xff;
+        reply[10] = IDENTITY.productId & 0xff;
+        reply[11] = (IDENTITY.productId >> 8) & 0xff;
+        reply[12] = IDENTITY.powerAttributes;
+        reply[13] = IDENTITY.mAUnits;
+        return;
+      case FLASH_USB_MANUFACTURER:
+        writeUsbString(reply, IDENTITY.manufacturer);
+        return;
+      case FLASH_USB_PRODUCT:
+        writeUsbString(reply, IDENTITY.product);
+        return;
+      case FLASH_USB_SERIAL:
+        writeUsbString(reply, IDENTITY.serialNumber);
+        return;
+      case FLASH_FACTORY_SERIAL: {
+        // The factory serial is plain ASCII, unlike the USB string descriptors.
+        const text = IDENTITY.factorySerialNumber;
+        reply[2] = text.length;
+        for (let i = 0; i < text.length; i++) reply[4 + i] = text.charCodeAt(i);
+        return;
+      }
+      default:
+        reply[1] = 0x01; // unsupported sub-command
     }
   }
 
@@ -302,6 +445,11 @@ export class Mcp2221Emulator {
     if (pending.offset >= pending.data.length) this.#read = null;
   }
 
+  /** Simulate an edge on GP1 when it is designated for interrupt detection. */
+  triggerInterrupt(): void {
+    this.#interruptDetected = true;
+  }
+
   #resetState(): void {
     for (const pin of this.#pins) {
       pin.mode = GP_GPIO;
@@ -312,5 +460,20 @@ export class Mcp2221Emulator {
     this.#addrNacked = false;
     this.#write = null;
     this.#read = null;
+    this.#interruptDetected = false;
+  }
+}
+
+/**
+ * USB string descriptors are length-prefixed UTF-16LE with a 0x03 type byte;
+ * the reported length counts those two header bytes.
+ */
+function writeUsbString(reply: Uint8Array, text: string): void {
+  reply[2] = text.length * 2 + 2;
+  reply[3] = USB_STRING_DESCRIPTOR_TYPE;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    reply[4 + i * 2] = code & 0xff;
+    reply[5 + i * 2] = (code >> 8) & 0xff;
   }
 }

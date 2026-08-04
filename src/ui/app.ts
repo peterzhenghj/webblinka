@@ -11,12 +11,24 @@ import { PythonSession } from "../worker/client.ts";
 import { BOOT_PHASE_LABELS } from "../worker/protocol.ts";
 import { el } from "./dom.ts";
 import { statusPill } from "./panel.ts";
-import { BoardPanel, type BoardInfo, type RuntimeInfo } from "./panels/board.ts";
+import {
+  CommonPanel,
+  type BoardInfo,
+  type ChipStatus,
+  type RuntimeInfo,
+} from "./panels/common.ts";
 import { ConsolePanel, type ConsoleResult } from "./panels/console.ts";
-import { GpioPanel, type PinMode, type PinState } from "./panels/gpio.ts";
+import { DescriptorsPanel, type UsbDescriptors } from "./panels/descriptors.ts";
+import {
+  GpioPanel,
+  type GpSettings,
+  type PinModeSpec,
+  type PinState,
+} from "./panels/gpio.ts";
 import { GpsPanel, type GpsState } from "./panels/gps.ts";
 import { I2cPanel } from "./panels/i2c.ts";
 import { LogPanel } from "./panels/log.ts";
+import { Tabs } from "./tabs.ts";
 
 const PA1010D_ADDRESS = 0x10;
 
@@ -29,7 +41,29 @@ export function mount(root: HTMLElement): void {
   const session = new PythonSession();
   const status = statusPill("Disconnected");
   const log = new LogPanel();
-  const board = new BoardPanel();
+
+  const common = new CommonPanel({
+    status: () => session.call<ChipStatus>("chip_status"),
+    clearInterrupt: () => session.call<void>("clear_interrupt"),
+  });
+
+  const descriptors = new DescriptorsPanel({
+    read: () => session.call<UsbDescriptors>("usb_descriptors"),
+  });
+
+  const gpio = new GpioPanel({
+    modes: () => session.call<Record<string, PinModeSpec[]>>("gpio_modes"),
+    configure: (name, mode) => session.call<PinState>("gpio_configure", name, mode),
+    release: (name) => session.call<void>("gpio_release", name),
+    write: (name, value) => session.call<PinState>("gpio_write", name, value),
+    readAll: () => session.call<PinState[]>("gpio_read_all"),
+    settings: () => session.call<{ gp: GpSettings }>("sram_settings"),
+    setClock: (duty, divider) => session.call("set_clock_output", duty, divider),
+    setDacReference: (v, o) => session.call("set_dac_reference", v, o),
+    setDacValue: (value) => session.call("set_dac_value", value),
+    setAdcReference: (v, o) => session.call("set_adc_reference", v, o),
+    setInterruptEdge: (edge) => session.call("set_interrupt_edge", edge),
+  });
 
   const gps = new GpsPanel({
     start: (address) => session.call<{ address: number }>("gps_start", address),
@@ -46,14 +80,6 @@ export function mount(root: HTMLElement): void {
     setFrequency: async (hz) => void (await session.call("set_i2c_frequency", hz)),
   });
 
-  const gpio = new GpioPanel({
-    capabilities: () => session.call<Record<string, PinMode[]>>("gpio_capabilities"),
-    configure: (name, mode) => session.call<PinState>("gpio_configure", name, mode),
-    release: (name) => session.call<void>("gpio_release", name),
-    write: (name, value) => session.call<PinState>("gpio_write", name, value),
-    readAll: () => session.call<PinState[]>("gpio_read_all"),
-  });
-
   const console_ = new ConsolePanel({
     exec: (source) => session.call<ConsoleResult>("console_exec", source),
     reset: () => session.call<string[]>("console_reset"),
@@ -61,9 +87,33 @@ export function mount(root: HTMLElement): void {
       session.call<{ requested: string; installed: string[] }>("install_package", spec),
   });
 
+  const tabs = new Tabs([
+    {
+      id: "common",
+      label: "Common",
+      content: common.root,
+      onShow: () => common.start(),
+      onHide: () => common.stop(),
+    },
+    {
+      id: "descriptors",
+      label: "USB Descriptors",
+      content: descriptors.root,
+      onShow: () => void descriptors.load(),
+    },
+    {
+      id: "gpio",
+      label: "GPIO",
+      content: gpio.root,
+      onShow: () => gpio.show(),
+      onHide: () => gpio.hide(),
+    },
+    { id: "i2c", label: "I²C", content: el("div", {}, [i2c.root, gps.root]) },
+    { id: "python", label: "Python", content: console_.root },
+  ]);
+
   const connect = el("button", { class: "primary", text: "Connect MCP2221" });
   const demo = el("button", { text: "Run the demo instead" });
-  const controls = el("div", { class: "controls" }, [connect, demo]);
   const intro = el("div", { class: "body" }, [
     el("p", {
       class: "hint",
@@ -72,7 +122,7 @@ export function mount(root: HTMLElement): void {
         "CircuitPython libraries run unmodified in a Python runtime inside this " +
         "page and talk to the chip over WebHID — no server, no install.",
     }),
-    controls,
+    el("div", { class: "controls" }, [connect, demo]),
   ]);
 
   root.replaceChildren(
@@ -86,15 +136,11 @@ export function mount(root: HTMLElement): void {
       el("header", {}, [el("h2", { text: "Connection" }), status.node]),
       intro,
     ]),
-    board.root,
-    i2c.root,
-    gps.root,
-    gpio.root,
-    console_.root,
+    tabs.root,
     log.root,
   );
 
-  const ui: Ui = { connect, demo, status, log, board, i2c, gpio, gps, console: console_ };
+  const ui: Ui = { connect, demo, status, log, tabs, common, gpio, i2c, console: console_ };
 
   session.on("status", (phase) => status.set(`${BOOT_PHASE_LABELS[phase]}…`, "busy"));
   session.on("log", (stream, text) => log.write(text, stream));
@@ -106,7 +152,7 @@ export function mount(root: HTMLElement): void {
 
   const blocker = unsupportedReason();
   if (blocker) {
-    // Demo mode still needs JSPI (it is Python doing the driving either way),
+    // Demo mode still needs JSPI -- it is Python doing the driving either way --
     // so only WebHID's absence leaves it usable.
     connect.disabled = true;
     status.set("Unsupported", "error");
@@ -126,10 +172,10 @@ interface Ui {
   demo: HTMLButtonElement;
   status: ReturnType<typeof statusPill>;
   log: LogPanel;
-  board: BoardPanel;
-  i2c: I2cPanel;
+  tabs: Tabs;
+  common: CommonPanel;
   gpio: GpioPanel;
-  gps: GpsPanel;
+  i2c: I2cPanel;
   console: ConsolePanel;
 }
 
@@ -160,10 +206,11 @@ async function start(
 
     const board = await session.call<BoardInfo>("connect");
     const runtime = await session.call<RuntimeInfo>("runtime_info");
-    ui.board.show(board, runtime);
+    ui.common.showBoard(board, runtime);
     ui.i2c.enable();
     await ui.gpio.enable();
     await ui.console.enable();
+    ui.tabs.enable();
     ui.status.set(`Connected — ${label}`, "ok");
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
 

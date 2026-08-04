@@ -13,11 +13,21 @@ test("digital output round-trips through the chip", async () => {
   await call("gpio_configure", "G0", "output");
   await call("gpio_write", "G0", 1);
   assert.equal(chip.pinState(0).value, 1, "chip should see the high level");
-  assert.deepEqual(await call("gpio_state", "G0"), { name: "G0", mode: "output", value: 1 });
+  assert.deepEqual(await call("gpio_state", "G0"), {
+    name: "G0",
+    mode: "output",
+    kind: "digital",
+    value: 1,
+  });
 
   await call("gpio_write", "G0", 0);
   assert.equal(chip.pinState(0).value, 0);
-  assert.deepEqual(await call("gpio_state", "G0"), { name: "G0", mode: "output", value: 0 });
+  assert.deepEqual(await call("gpio_state", "G0"), {
+    name: "G0",
+    mode: "output",
+    kind: "digital",
+    value: 0,
+  });
 });
 
 test("digital input reads what the chip reports", async () => {

@@ -81,36 +81,79 @@ def set_i2c_frequency(hz: int) -> int:
 
 # ---------------------------------------------------------------------- GPIO
 
-# The MCP2221's four general-purpose pins, and what each one can actually be.
-# ADC lives on GP1-GP3 and the (5-bit) DAC on GP2-GP3; Blinka raises if you ask
-# for anything else, so the UI is told up front rather than by trial and error.
-PIN_CAPABILITIES = {
-    "G0": ["input", "output"],
-    "G1": ["input", "output", "analog_in"],
-    "G2": ["input", "output", "analog_in", "analog_out"],
-    "G3": ["input", "output", "analog_in", "analog_out"],
+# Each MCP2221 pin has a three-bit *designation* in SRAM selecting one of
+# several hardwired functions, only some of which CircuitPython has a name for.
+# `input`, `output`, `analog_in` and `analog_out` go through digitalio/analogio,
+# because that is the whole point of running Blinka. The rest are chip
+# functions with no CircuitPython equivalent, so they are set by writing the
+# designation directly -- still through Blinka's own gp_set_mode.
+#
+# Designation codes come from the datasheet's GP settings tables; Blinka spells
+# the same values GP_GPIO / GP_DEDICATED / GP_ALT0 / GP_ALT1 / GP_ALT2.
+PIN_MODES: dict[str, dict[str, dict[str, Any]]] = {
+    "G0": {
+        "input": {"code": 0b000, "label": "Digital in", "kind": "digital"},
+        "output": {"code": 0b000, "label": "Digital out", "kind": "digital"},
+        "sspnd": {"code": 0b001, "label": "SSPND (USB suspend)", "kind": "dedicated"},
+        "led_uart_rx": {"code": 0b010, "label": "LED — UART Rx", "kind": "dedicated"},
+    },
+    "G1": {
+        "input": {"code": 0b000, "label": "Digital in", "kind": "digital"},
+        "output": {"code": 0b000, "label": "Digital out", "kind": "digital"},
+        "clock_out": {"code": 0b001, "label": "Clock output", "kind": "clock"},
+        "analog_in": {"code": 0b010, "label": "ADC 1", "kind": "adc"},
+        "led_uart_tx": {"code": 0b011, "label": "LED — UART Tx", "kind": "dedicated"},
+        "interrupt": {"code": 0b100, "label": "Interrupt on change", "kind": "interrupt"},
+    },
+    "G2": {
+        "input": {"code": 0b000, "label": "Digital in", "kind": "digital"},
+        "output": {"code": 0b000, "label": "Digital out", "kind": "digital"},
+        "usb_config": {"code": 0b001, "label": "USBCFG (USB configured)", "kind": "dedicated"},
+        "analog_in": {"code": 0b010, "label": "ADC 2", "kind": "adc"},
+        "analog_out": {"code": 0b011, "label": "DAC 1", "kind": "dac"},
+    },
+    "G3": {
+        "input": {"code": 0b000, "label": "Digital in", "kind": "digital"},
+        "output": {"code": 0b000, "label": "Digital out", "kind": "digital"},
+        "led_i2c": {"code": 0b001, "label": "LED — I²C", "kind": "dedicated"},
+        "analog_in": {"code": 0b010, "label": "ADC 3", "kind": "adc"},
+        "analog_out": {"code": 0b011, "label": "DAC 2", "kind": "dac"},
+    },
 }
+
+# Which ADC channel each pin reports on. GP1 is channel 0.
+ADC_CHANNEL = {"G1": 0, "G2": 1, "G3": 2}
 
 _pins: dict[str, dict[str, Any]] = {}
 
 
 @handler
-def gpio_capabilities() -> dict[str, list[str]]:
-    return PIN_CAPABILITIES
+def gpio_modes() -> dict[str, list[dict[str, Any]]]:
+    """The selectable designation for every pin, in menu order."""
+    return {
+        name: [{"mode": mode, **spec} for mode, spec in modes.items()]
+        for name, modes in PIN_MODES.items()
+    }
+
+
+def _spec(name: str, mode: str) -> dict[str, Any]:
+    spec = PIN_MODES.get(name, {}).get(mode)
+    if spec is None:
+        raise ValueError(f"{name} cannot be {mode}")
+    return spec
 
 
 @handler
 def gpio_configure(name: str, mode: str) -> dict[str, Any]:
-    """Claim a pin in one of its supported modes, releasing any previous claim."""
-    if mode not in PIN_CAPABILITIES.get(name, []):
-        raise ValueError(f"{name} cannot be {mode}")
+    """Put a pin into one of its designations, releasing any previous claim."""
+    spec = _spec(name, mode)
 
     import analogio
     import board
     import digitalio
 
     previous = _pins.pop(name, None)
-    if previous is not None:
+    if previous is not None and previous["object"] is not None:
         previous["object"].deinit()
 
     pin = getattr(board, name)
@@ -121,17 +164,24 @@ def gpio_configure(name: str, mode: str) -> dict[str, Any]:
         )
     elif mode == "analog_in":
         obj = analogio.AnalogIn(pin)
-    else:
+    elif mode == "analog_out":
         obj = analogio.AnalogOut(pin)
+    else:
+        # A dedicated chip function. There is no CircuitPython object to hold,
+        # just a designation to write.
+        from . import mcp2221_chip
 
-    _pins[name] = {"object": obj, "mode": mode, "written": 0}
+        mcp2221_chip.chip().gp_set_mode(int(name[1]), spec["code"])
+        obj = None
+
+    _pins[name] = {"object": obj, "mode": mode, "kind": spec["kind"], "written": 0}
     return gpio_state(name)
 
 
 @handler
 def gpio_release(name: str) -> None:
     entry = _pins.pop(name, None)
-    if entry is not None:
+    if entry is not None and entry["object"] is not None:
         entry["object"].deinit()
 
 
@@ -153,20 +203,26 @@ def gpio_write(name: str, value: int) -> dict[str, Any]:
 @handler
 def gpio_state(name: str) -> dict[str, Any]:
     entry = _require_pin(name)
-    mode = entry["mode"]
-    if mode in ("input", "output"):
+    mode, kind = entry["mode"], entry["kind"]
+    if kind == "digital":
         value = int(entry["object"].value)
-    elif mode == "analog_in":
+    elif kind == "adc":
         value = int(entry["object"].value)
-    else:
+    elif kind == "dac":
         value = int(entry["written"])  # the DAC is write-only
-    return {"name": name, "mode": mode, "value": value}
+    else:
+        value = None  # a dedicated function the chip drives on its own
+    return {"name": name, "mode": mode, "kind": kind, "value": value}
 
 
 @handler
 def gpio_read_all() -> list[dict[str, Any]]:
-    """One HID round-trip per claimed pin, so the UI can poll cheaply."""
-    return [gpio_state(name) for name in list(_pins)]
+    """One HID round-trip per readable pin, so the UI can poll cheaply."""
+    return [
+        gpio_state(name)
+        for name, entry in list(_pins.items())
+        if entry["kind"] in ("digital", "adc", "dac")
+    ]
 
 
 def _require_pin(name: str) -> dict[str, Any]:

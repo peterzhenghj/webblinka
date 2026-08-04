@@ -1,71 +1,128 @@
 import { el } from "../dom.ts";
 import { panel } from "../panel.ts";
 
+/** Anything a pin can be. Only some of these have a CircuitPython equivalent. */
+export type PinMode =
+  | "input"
+  | "output"
+  | "analog_in"
+  | "analog_out"
+  | "sspnd"
+  | "usb_config"
+  | "clock_out"
+  | "interrupt"
+  | "led_uart_rx"
+  | "led_uart_tx"
+  | "led_i2c";
+
+/** How the UI should present a mode, decided by the chip's own datasheet. */
+export type PinKind = "digital" | "adc" | "dac" | "clock" | "interrupt" | "dedicated";
+
+export interface PinModeSpec {
+  mode: PinMode;
+  label: string;
+  kind: PinKind;
+  code: number;
+}
+
 export interface PinState {
   name: string;
   mode: PinMode;
-  value: number;
+  kind: PinKind;
+  value: number | null;
 }
 
-export type PinMode = "input" | "output" | "analog_in" | "analog_out";
-
-const MODE_LABELS: Record<PinMode | "off", string> = {
-  off: "unused",
-  input: "digital in",
-  output: "digital out",
-  analog_in: "analog in",
-  analog_out: "analog out",
-};
-
-const POLL_INTERVAL_MS = 500;
+export interface GpSettings {
+  clock: { dutyCycle: string; divider: string };
+  dac: { referenceVoltage: string; referenceOption: string; value: number };
+  adc: { referenceVoltage: string; referenceOption: string };
+  interrupt: { edge: string };
+}
 
 export interface GpioHandlers {
-  capabilities(): Promise<Record<string, PinMode[]>>;
+  modes(): Promise<Record<string, PinModeSpec[]>>;
   configure(name: string, mode: PinMode): Promise<PinState>;
   release(name: string): Promise<void>;
   write(name: string, value: number): Promise<PinState>;
   readAll(): Promise<PinState[]>;
+  settings(): Promise<{ gp: GpSettings }>;
+  setClock(dutyCycle: string, divider: string): Promise<unknown>;
+  setDacReference(voltage: string, option: string): Promise<unknown>;
+  setDacValue(value: number): Promise<unknown>;
+  setAdcReference(voltage: string, option: string): Promise<unknown>;
+  setInterruptEdge(edge: string): Promise<unknown>;
 }
 
-/** One row per GP pin: pick a mode, then drive or watch it. */
+const POLL_INTERVAL_MS = 500;
+const VOLTAGES = ["off", "1.024V", "2.048V", "4.096V"];
+const DUTY_CYCLES = ["0%", "25%", "50%", "75%"];
+const DIVIDERS = ["24 MHz", "12 MHz", "6 MHz", "3 MHz", "1.5 MHz", "750 kHz", "375 kHz"];
+const EDGES = ["off", "positive", "negative", "both"];
+
+/**
+ * One row per GP pin. The MCP2221 gives each pin a choice between GPIO and
+ * several hardwired functions -- activity LEDs, a clock output, USB state
+ * indicators, interrupt detection -- so the row shows whichever control that
+ * designation actually has, and nothing where the chip drives the pin itself.
+ *
+ * The clock, reference-voltage and interrupt-edge settings below the table are
+ * chip-wide rather than per-pin, which is why they are not in the rows.
+ */
 export class GpioPanel {
   readonly root: HTMLElement;
-  readonly #body: HTMLElement;
   readonly #handlers: GpioHandlers;
+  readonly #pinsBody: HTMLElement;
+  readonly #sharedBody: HTMLElement;
   readonly #rows = new Map<string, PinRow>();
   #timer: number | null = null;
+  #visible = false;
 
   constructor(handlers: GpioHandlers) {
     this.#handlers = handlers;
-    const p = panel("GPIO");
-    this.root = p.root;
-    this.#body = p.body;
-    this.#body.append(el("p", { class: "hint", text: "Connect to configure pins." }));
+    this.root = el("div");
+
+    const pins = panel("Pin designations");
+    this.#pinsBody = pins.body;
+    this.#pinsBody.append(el("p", { class: "hint", text: "Not connected." }));
+
+    const shared = panel("Chip-wide settings");
+    this.#sharedBody = shared.body;
+    this.#sharedBody.append(
+      el("p", { class: "hint", text: "Clock, references and interrupt edge." }),
+    );
+
+    this.root.append(pins.root, shared.root);
   }
 
   async enable(): Promise<void> {
-    const capabilities = await this.#handlers.capabilities();
+    const modes = await this.#handlers.modes();
     const table = el("table", { class: "pins" });
-    for (const [name, modes] of Object.entries(capabilities)) {
-      const row = new PinRow(name, modes, this.#handlers, () => this.#syncPolling());
+    for (const [name, specs] of Object.entries(modes)) {
+      const row = new PinRow(name, specs, this.#handlers, () => this.#syncPolling());
       this.#rows.set(name, row);
       table.append(row.root);
     }
-    this.#body.replaceChildren(table);
+    this.#pinsBody.replaceChildren(table);
+    await this.#buildShared();
   }
 
-  stop(): void {
-    if (this.#timer !== null) clearInterval(this.#timer);
-    this.#timer = null;
+  show(): void {
+    this.#visible = true;
+    this.#syncPolling();
+  }
+
+  hide(): void {
+    this.#visible = false;
+    this.#syncPolling();
   }
 
   #syncPolling(): void {
-    // Only poll while something is readable; a bus that nobody is watching
-    // should be quiet, especially with a driver sharing it.
-    const readable = [...this.#rows.values()].some((row) => row.isReadable);
-    if (readable && this.#timer === null) {
+    // Poll only while the tab is on screen and something is actually readable:
+    // every tick is real traffic that competes with whatever else uses the bus.
+    const wanted = this.#visible && [...this.#rows.values()].some((row) => row.isReadable);
+    if (wanted && this.#timer === null) {
       this.#timer = setInterval(() => void this.#poll(), POLL_INTERVAL_MS) as unknown as number;
-    } else if (!readable && this.#timer !== null) {
+    } else if (!wanted && this.#timer !== null) {
       clearInterval(this.#timer);
       this.#timer = null;
     }
@@ -77,8 +134,54 @@ export class GpioPanel {
         this.#rows.get(state.name)?.show(state);
       }
     } catch {
-      // A transient bus error should not kill the timer; the next tick retries.
+      // Transient bus errors are expected; the next tick retries.
     }
+  }
+
+  async #buildShared(): Promise<void> {
+    const { gp } = await this.#handlers.settings();
+
+    const clockDuty = select(DUTY_CYCLES, gp.clock.dutyCycle);
+    const clockDivider = select(DIVIDERS, gp.clock.divider);
+    const applyClock = () =>
+      void this.#handlers.setClock(clockDuty.value, clockDivider.value);
+    clockDuty.addEventListener("change", applyClock);
+    clockDivider.addEventListener("change", applyClock);
+
+    const dacVoltage = select(VOLTAGES, gp.dac.referenceVoltage);
+    const dacOption = select(["Vdd", "Vrm"], gp.dac.referenceOption);
+    const applyDac = () =>
+      void this.#handlers.setDacReference(dacVoltage.value, dacOption.value);
+    dacVoltage.addEventListener("change", applyDac);
+    dacOption.addEventListener("change", applyDac);
+
+    const adcVoltage = select(VOLTAGES, gp.adc.referenceVoltage);
+    const adcOption = select(["Vdd", "Vrm"], gp.adc.referenceOption);
+    const applyAdc = () =>
+      void this.#handlers.setAdcReference(adcVoltage.value, adcOption.value);
+    adcVoltage.addEventListener("change", applyAdc);
+    adcOption.addEventListener("change", applyAdc);
+
+    const edge = select(EDGES, gp.interrupt.edge);
+    edge.addEventListener("change", () => void this.#handlers.setInterruptEdge(edge.value));
+
+    this.#sharedBody.replaceChildren(
+      group("Clock output", "Drives GP1 when it is designated Clock output.", [
+        labelled("Duty cycle", clockDuty),
+        labelled("Rate", clockDivider),
+      ]),
+      group("DAC reference", "Applies to whichever pin is designated as a DAC.", [
+        labelled("Voltage", dacVoltage),
+        labelled("Source", dacOption),
+      ]),
+      group("ADC reference", "Applies to every pin designated as an ADC.", [
+        labelled("Voltage", adcVoltage),
+        labelled("Source", adcOption),
+      ]),
+      group("Interrupt on change", "Edge GP1 detects when designated for interrupts.", [
+        labelled("Edge", edge),
+      ]),
+    );
   }
 }
 
@@ -87,84 +190,101 @@ class PinRow {
   readonly #name: string;
   readonly #handlers: GpioHandlers;
   readonly #onModeChange: () => void;
-  readonly #mode: HTMLSelectElement;
+  readonly #select: HTMLSelectElement;
   readonly #control: HTMLTableCellElement;
   readonly #value: HTMLTableCellElement;
-  #current: PinMode | "off" = "off";
+  readonly #kinds: Map<string, PinKind>;
+  #kind: PinKind | null = null;
 
-  constructor(name: string, modes: PinMode[], handlers: GpioHandlers, onModeChange: () => void) {
+  constructor(
+    name: string,
+    specs: PinModeSpec[],
+    handlers: GpioHandlers,
+    onModeChange: () => void,
+  ) {
     this.#name = name;
     this.#handlers = handlers;
     this.#onModeChange = onModeChange;
+    this.#kinds = new Map(specs.map((s) => [s.mode, s.kind]));
 
-    this.#mode = el("select");
-    this.#mode.append(el("option", { value: "off", text: MODE_LABELS.off }));
-    for (const mode of modes) {
-      this.#mode.append(el("option", { value: mode, text: MODE_LABELS[mode] }));
+    this.#select = el("select");
+    this.#select.append(el("option", { value: "off", text: "unused" }));
+    for (const spec of specs) {
+      this.#select.append(el("option", { value: spec.mode, text: spec.label }));
     }
-    this.#mode.addEventListener("change", () => void this.#applyMode());
+    this.#select.addEventListener("change", () => void this.#apply());
 
     this.#control = el("td", { class: "pin-control" });
     this.#value = el("td", { class: "pin-value", text: "—" });
     this.root = el("tr", {}, [
       el("th", { text: name, scope: "row" }),
-      el("td", {}, [this.#mode]),
+      el("td", {}, [this.#select]),
       this.#control,
       this.#value,
     ]);
   }
 
   get isReadable(): boolean {
-    return this.#current === "input" || this.#current === "analog_in";
+    return this.#kind === "digital" || this.#kind === "adc";
   }
 
   show(state: PinState): void {
-    if (state.mode === "analog_in") {
-      // The MCP2221's ADC is 10-bit; Blinka reports it in CircuitPython's
-      // 16-bit range, so show both the raw counts and the implied voltage.
-      const volts = (state.value / 65535) * 3.3;
-      this.#value.textContent = `${state.value} · ${volts.toFixed(2)} V`;
-    } else if (state.mode === "input" || state.mode === "output") {
+    if (state.value === null) {
+      this.#value.textContent = "driven by chip";
+      return;
+    }
+    if (state.kind === "adc") {
+      // Blinka presents the MCP2221's 10-bit ADC in CircuitPython's 16-bit
+      // range, so show the counts alongside the implied voltage.
+      this.#value.textContent = `${state.value} · ${((state.value / 65535) * 3.3).toFixed(2)} V`;
+    } else if (state.kind === "digital") {
       this.#value.textContent = state.value ? "high" : "low";
     } else {
-      this.#value.textContent = `${state.value}`;
+      this.#value.textContent = String(state.value);
     }
   }
 
-  async #applyMode(): Promise<void> {
-    const mode = this.#mode.value as PinMode | "off";
-    this.#mode.disabled = true;
+  async #apply(): Promise<void> {
+    const mode = this.#select.value;
+    this.#select.disabled = true;
     try {
       if (mode === "off") {
         await this.#handlers.release(this.#name);
-        this.#current = "off";
+        this.#kind = null;
         this.#control.replaceChildren();
         this.#value.textContent = "—";
       } else {
-        this.show(await this.#handlers.configure(this.#name, mode));
-        this.#current = mode;
-        this.#buildControl(mode);
+        const state = await this.#handlers.configure(this.#name, mode as PinMode);
+        this.#kind = this.#kinds.get(mode) ?? null;
+        this.#buildControl(this.#kind, mode as PinMode);
+        this.show(state);
       }
     } catch (err) {
       this.#value.textContent = err instanceof Error ? err.message : String(err);
     } finally {
-      this.#mode.disabled = false;
+      this.#select.disabled = false;
       this.#onModeChange();
     }
   }
 
-  #buildControl(mode: PinMode): void {
-    if (mode === "output") {
+  #buildControl(kind: PinKind | null, mode: PinMode): void {
+    if (kind === "digital" && mode === "output") {
       const toggle = el("button", { text: "Set high" });
       let high = false;
       toggle.addEventListener("click", () => {
         high = !high;
         toggle.textContent = high ? "Set low" : "Set high";
-        void this.#handlers.write(this.#name, high ? 1 : 0).then((state) => this.show(state));
+        void this.#handlers.write(this.#name, high ? 1 : 0).then((s) => this.show(s));
       });
       this.#control.replaceChildren(toggle);
-    } else if (mode === "analog_out") {
-      const slider = el("input", { type: "range", min: "0", max: "65535", step: "2048", value: "0" });
+    } else if (kind === "dac") {
+      const slider = el("input", {
+        type: "range",
+        min: "0",
+        max: "65535",
+        step: "2048",
+        value: "0",
+      });
       slider.addEventListener("input", () => {
         void this.#handlers.write(this.#name, Number(slider.value)).then((s) => this.show(s));
       });
@@ -173,4 +293,26 @@ class PinRow {
       this.#control.replaceChildren();
     }
   }
+}
+
+// ------------------------------------------------------------------ helpers
+
+function select(options: string[], selected: string): HTMLSelectElement {
+  const node = el("select");
+  for (const option of options) {
+    node.append(el("option", { value: option, text: option, selected: option === selected }));
+  }
+  return node;
+}
+
+function labelled(text: string, control: HTMLElement): HTMLElement {
+  return el("label", { class: "field" }, [el("span", { text }), control]);
+}
+
+function group(title: string, hint: string, fields: HTMLElement[]): HTMLElement {
+  return el("fieldset", { class: "settings-group" }, [
+    el("legend", { text: title }),
+    el("p", { class: "hint", text: hint }),
+    el("div", { class: "fields" }, fields),
+  ]);
 }
