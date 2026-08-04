@@ -72,7 +72,13 @@ shape of an adapter UI right.
   usable, green once actually in the solution — because an acquiring receiver
   and a broken one look identical for the first half-minute unless you can watch
   the satellites arrive. Alongside it: time to first fix, satellites used versus
-  in view, PDOP/HDOP/VDOP, and the raw NMEA.
+  in view, PDOP/HDOP/VDOP, and the raw NMEA. Once there is a fix it also plots
+  the position scatter — where successive fixes land, in metres, against the
+  HDOP-derived error estimate. That comparison is the useful one: a street map
+  would show a single dot that never moves, whereas the size and shape of the
+  cloud is the receiver's actual precision. No tiles, so no third party is told
+  where the receiver is on every fix; there is a link out for when you do want
+  streets, and following it is a decision rather than a side effect.
 - **Python** — the REPL and the PyPI installer.
 
 `input`/`output`/`analog_in`/`analog_out` go through `digitalio` and `analogio`,

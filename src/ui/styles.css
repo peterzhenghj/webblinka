@@ -534,6 +534,69 @@ select {
   font-size: 0.9rem;
 }
 
+/* --------------------------------------------------------- gps scatter plot */
+
+.gps-map {
+  margin: 1.25rem 0;
+}
+
+.gps-plot {
+  width: 100%;
+  max-width: 15rem;
+}
+
+.gps-plot-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.gps-plot-ring,
+.gps-plot-axis {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.gps-plot-axis {
+  stroke-dasharray: 3 4;
+}
+
+/* An estimate from HDOP, so drawn as a wash rather than a boundary. */
+.gps-plot-accuracy {
+  fill: var(--accent);
+  fill-opacity: 0.08;
+  stroke: var(--accent);
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+}
+
+.gps-plot-track {
+  fill: none;
+  stroke: var(--accent);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+}
+
+.gps-plot-past {
+  fill: var(--muted);
+  fill-opacity: 0.5;
+}
+
+.gps-plot-now {
+  fill: var(--accent);
+}
+
+.gps-map .hint {
+  margin: 0.5rem 0 0;
+}
+
+.gps-map a {
+  color: var(--accent);
+  display: inline-block;
+  margin-top: 0.35rem;
+}
+
 .sky-block {
   margin-bottom: 1.25rem;
 }

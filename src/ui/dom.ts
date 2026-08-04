@@ -33,6 +33,21 @@ export function clear(node: Element): void {
   node.replaceChildren();
 }
 
+/**
+ * SVG needs createElementNS -- elements made with createElement carry the HTML
+ * namespace and render as nothing at all, silently.
+ */
+export function svg<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, string | number> = {},
+  children: Element[] = [],
+): SVGElementTagNameMap[K] {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+  node.append(...children);
+  return node;
+}
+
 /** 0x1f, padded and lowercase, the way i2cdetect prints addresses. */
 export function hex(value: number, width = 2): string {
   return `0x${value.toString(16).padStart(width, "0")}`;

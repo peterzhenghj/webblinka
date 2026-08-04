@@ -1,6 +1,7 @@
 import type { DevicePanel, DeviceSession } from "../../devices/panel.ts";
 import { el } from "../dom.ts";
 import { panel, statusPill } from "../panel.ts";
+import { GpsMap } from "./gps-map.ts";
 
 export interface Satellite {
   prn: string;
@@ -64,6 +65,7 @@ export class GpsPanel implements DevicePanel {
   readonly #sky = el("div", { class: "sky" });
   readonly #skyNote = el("p", { class: "hint", text: "Waiting for the first satellite report…" });
   readonly #raw = el("pre", { class: "log" });
+  readonly #map = new GpsMap();
   #timer: number | null = null;
   #polling = false;
 
@@ -108,6 +110,9 @@ export class GpsPanel implements DevicePanel {
 
     this.#body.append(
       this.#progress,
+      // Above the sky view: once there is a fix, where it is landing is the
+      // thing you want, and the satellites become the explanation for it.
+      this.#map.root,
       el("div", { class: "sky-block" }, [
         el("h3", { class: "subhead", text: "Satellites in view" }),
         this.#sky,
@@ -154,6 +159,7 @@ export class GpsPanel implements DevicePanel {
     );
 
     this.#progress.textContent = progressLine(state, used);
+    this.#map.update(state);
     this.#renderSky(state.sky);
 
     this.#set("fix", fixDescription(state));
