@@ -201,17 +201,26 @@ export function mount(root: HTMLElement): void {
     deviceManager,
     intro,
     demoMode: false,
+    setDemoMode(on: boolean) {
+      this.demoMode = on;
+      demoBanner.hidden = !on;
+      if (on) root.dataset.demo = "true";
+      else delete root.dataset.demo;
+    },
   };
 
   reset.addEventListener("click", () => void resetChip(session, ui));
 
-  session.on("status", (phase) => status.set(`${BOOT_PHASE_LABELS[phase]}…`, "busy"));
+  session.on("status", (phase) => {
+    // The pill stays one short word so its box never changes size; the phase
+    // detail goes to the log, which is where you would look for progress.
+    status.set("Connecting…", "busy");
+    log.write(`${BOOT_PHASE_LABELS[phase]}…`);
+  });
   session.on("log", (stream, text) => log.write(text, stream));
 
   demo.addEventListener("click", () => {
-    ui.demoMode = true;
-    root.dataset.demo = "true";
-    demoBanner.hidden = false;
+    ui.setDemoMode(true);
     log.write(
       "Starting in demo mode: emulated MCP2221 with a simulated PA1010D. " +
         "All readings from here are software-generated, not measurements.",
@@ -251,6 +260,7 @@ interface Ui {
   intro: HTMLElement;
   /** Readings are software-generated, and every one of them must say so. */
   demoMode: boolean;
+  setDemoMode(on: boolean): void;
 }
 
 async function connectHardware(session: PythonSession, ui: Ui): Promise<void> {
@@ -258,11 +268,23 @@ async function connectHardware(session: PythonSession, ui: Ui): Promise<void> {
   const granted = await grantedMcp2221s();
   const device = granted[0] ?? (await requestMcp2221());
   if (!device) {
-    ui.status.set("No device selected", "idle");
+    ui.status.set("Disconnected", "idle");
+    ui.log.write("No device selected.");
     ui.connect.disabled = false;
     return;
   }
   ui.log.write(`Selected ${device.productName || "MCP2221"}.`);
+
+  // Coming from the simulator: drop its devices and its labelling before the
+  // transport swaps, so nothing simulated is left on screen next to real
+  // readings. The swap itself is invisible to Python -- its `hid` module talks
+  // to the transport, not to any particular device.
+  if (ui.demoMode) {
+    await ui.deviceManager.closeAll();
+    ui.setDemoMode(false);
+    ui.log.write("Leaving demo mode; readings from here are from the hardware.");
+  }
+
   await start(session, ui, new WebHidTransport(device), device.productName || "MCP2221");
 }
 
@@ -287,23 +309,27 @@ async function start(
     ui.tabs.enable();
 
     // The pitch has done its job, and the Common tab now says everything it
-    // said about the board. Connect goes too -- there is nothing left to connect.
+    // said about the board.
     ui.intro.hidden = true;
-    ui.connect.hidden = true;
     ui.reset.hidden = false;
+    // Connected to hardware there is nothing left to connect, but the button
+    // keeps its box rather than being removed -- the header must not reflow
+    // around it. In demo mode it stays live and enabled, because swapping the
+    // simulator for a real adapter is what someone in demo mode does next, and
+    // the demo banner tells them to press exactly this button.
+    ui.connect.style.visibility = ui.demoMode ? "visible" : "hidden";
+    ui.connect.disabled = !ui.demoMode;
 
     // "Demo" rather than "Connected": nothing is connected, and the pill is the
-    // one thing on screen in every tab.
-    ui.status.set(
-      ui.demoMode ? `Demo — ${label}` : `Connected — ${label}`,
-      ui.demoMode ? "busy" : "ok",
-    );
+    // one thing on screen in every tab. The device name lives in Common's Board
+    // panel -- here it would only make the pill jump about as it changes.
+    ui.status.set(ui.demoMode ? "Demo mode" : "Connected", ui.demoMode ? "busy" : "ok");
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
     reportBusState(ui, session, board.bus);
   } catch (err) {
     ui.status.set("Failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");
-    ui.connect.hidden = false;
+    ui.connect.style.visibility = "visible";
     ui.connect.disabled = false;
     ui.demo.disabled = false;
   }
