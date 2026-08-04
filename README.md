@@ -73,6 +73,23 @@ functions CircuitPython has no vocabulary for, so
 [`mcp2221_chip.py`](python/webblinka/mcp2221_chip.py) speaks the datasheet's
 report protocol over the HID transport Blinka already owns. Still no fork.
 
+## When the bus misbehaves
+
+Any failed call into Python dumps the last two dozen HID transfers to the log —
+command, reply, and the I²C engine state the chip reported. Python's traceback
+tells you which line raised; only the bytes tell you why, which matters when the
+hardware is on someone else's desk.
+
+The MCP2221's cancel is a request the engine takes a few hundred microseconds to
+honour. Blinka waits a flat millisecond and then issues its next command, so when
+the wind-down runs long the command is rejected as busy and Blinka reads that as
+`Unrecoverable I2C state failure`. `force_idle()` polls until the engine really
+is idle instead of assuming, and the scan recovers per-address rather than
+abandoning the sweep. `Mcp2221Emulator.cancelLatency` reproduces the window.
+
+Scanning is not automatic on connect: it writes to every address on the bus, so
+it happens when you open the I²C tab, and again whenever you press Scan.
+
 ## Demo mode
 
 No adapter? [`src/hid/mcp2221-emulator.ts`](src/hid/mcp2221-emulator.ts) is a

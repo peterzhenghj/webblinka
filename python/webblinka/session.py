@@ -36,32 +36,69 @@ def connect() -> dict[str, Any]:
     from adafruit_blinka.agnostic import board_id, chip_id
     from adafruit_blinka.microcontroller.mcp2221.mcp2221 import mcp2221
 
+    from . import mcp2221_chip
+
     _mcp = mcp2221
     # A page reload can leave the I2C engine mid-transfer from the previous
     # session. Blinka normally clears that with a chip reset, but a reset
     # re-enumerates the USB device and would invalidate the page's HIDDevice, so
-    # cancel the transfer instead -- same effect, device stays put.
-    _mcp._i2c_cancel()  # noqa: SLF001 - no public spelling for this
+    # cancel the transfer instead -- same effect, device stays put. Poll until
+    # the engine is actually idle rather than assuming one cancel took.
+    state = mcp2221_chip.force_idle()
 
+    # The clock divider is only accepted while the engine is idle, so this has
+    # to come after the cancel.
     _i2c = busio.I2C(board.SCL, board.SDA)
 
     return {
         "chip": chip_id,
         "board": board_id,
         "pins": [name for name in ("G0", "G1", "G2", "G3") if hasattr(board, name)],
+        "i2cState": state,
     }
+
+
+# The I2C spec reserves 0x00-0x07 and 0x78-0x7f. i2cdetect skips them and so do
+# we: 0x00 in particular is the general call address, and Blinka's own scan
+# writes a 0x00 byte to it, which is the general-call software-reset command.
+FIRST_ADDRESS = 0x08
+LAST_ADDRESS = 0x77
 
 
 @handler
 def i2c_scan() -> list[int]:
-    """Addresses that ACK'd, as busio's scan() reports them (7-bit)."""
+    """Addresses that ACK'd (7-bit).
+
+    Deliberately not busio's scan(). Blinka probes with a one-byte write of
+    0x00, which is a real write -- on a device with an auto-incrementing pointer
+    that lands in register 0 -- and it aborts the entire sweep if any single
+    address leaves the MCP2221's I2C engine unhappy. A zero-length write is the
+    standard probe and touches nothing, and a wedged engine is a reason to
+    recover and carry on to the next address, not to abandon the scan.
+    """
+    from . import mcp2221_chip
+
     bus = i2c()
+    chip = mcp2221_chip.chip()
+    found = []
+
     while not bus.try_lock():
         pass
     try:
-        return list(bus.scan())
+        for address in range(FIRST_ADDRESS, LAST_ADDRESS + 1):
+            try:
+                chip.i2c_writeto(address, b"")
+            except OSError:
+                continue  # NACK: nothing at this address
+            except RuntimeError:
+                # The engine reported an unrecoverable state for this probe.
+                # Clear it and keep going; one sulky address is not the scan.
+                mcp2221_chip.force_idle()
+                continue
+            found.append(address)
     finally:
         bus.unlock()
+    return found
 
 
 @handler

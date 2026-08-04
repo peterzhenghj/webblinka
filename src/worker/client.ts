@@ -1,3 +1,4 @@
+import { HidTrace } from "../hid/trace.ts";
 import type { HidTransport } from "../hid/transport.ts";
 import { PYODIDE_INDEX_URL } from "../pyodide-version.ts";
 import type { BootPhase, FromWorker, HidRequest, HidResponse, ToWorker } from "./protocol.ts";
@@ -13,6 +14,8 @@ export interface SessionEvents {
  * answered by whichever transport is installed -- real WebHID or the emulator.
  */
 export class PythonSession {
+  /** Rolling record of HID traffic, dumped alongside any failed call. */
+  readonly trace = new HidTrace();
   readonly #worker: Worker;
   readonly #pending = new Map<number, { resolve: (v: never) => void; reject: (e: Error) => void }>();
   readonly #listeners: { [K in keyof SessionEvents]: Set<SessionEvents[K]> } = {
@@ -84,8 +87,14 @@ export class PythonSession {
         const waiter = this.#pending.get(msg.id);
         this.#pending.delete(msg.id);
         if (!waiter) break;
-        if (msg.ok) waiter.resolve(msg.value as never);
-        else waiter.reject(new Error(msg.error));
+        if (msg.ok) {
+          waiter.resolve(msg.value as never);
+        } else {
+          // Python's traceback says which line raised, never which bytes made
+          // it raise. Attach the transfers around the failure.
+          for (const fn of this.#listeners.log) fn("stderr", this.trace.format());
+          waiter.reject(new Error(msg.error));
+        }
         break;
       }
       case "hid":
@@ -133,7 +142,7 @@ export class PythonSession {
     }
   }
 
-  #runHid(request: HidRequest): Promise<HidResponse> {
+  async #runHid(request: HidRequest): Promise<HidResponse> {
     const transport = this.#transport;
     if (!transport) throw new Error("no HID device is connected");
     switch (request.op) {
@@ -142,9 +151,17 @@ export class PythonSession {
       case "open":
         return transport.open(request.vendorId, request.productId).then(() => null);
       case "write":
+        this.trace.wrote(request.data);
         return transport.write(request.data);
       case "read":
-        return transport.read(request.length, request.timeoutMs);
+        try {
+          const reply = await transport.read(request.length, request.timeoutMs);
+          this.trace.read(reply);
+          return reply;
+        } catch (err) {
+          this.trace.failed(err instanceof Error ? err.message : String(err));
+          throw err;
+        }
       case "close":
         return transport.close().then(() => null);
     }

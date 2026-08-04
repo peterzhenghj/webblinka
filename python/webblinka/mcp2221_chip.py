@@ -158,6 +158,32 @@ def chip_status() -> dict[str, Any]:
 
 
 @handler
+def force_idle(attempts: int = 8) -> str:
+    """Drag the I2C engine back to idle, and report where it ended up.
+
+    A cancel is a *request*: the chip answers 0x10 in byte 2 to say it has
+    marked the transfer for cancellation, and the engine only reaches idle a
+    few hundred microseconds later. Blinka's single 1 ms sleep is usually
+    enough and occasionally is not, which is the whole story behind its
+    "Unrecoverable I2C state failure" -- the next command arrives while the
+    engine is still winding down, gets rejected as busy, and the rejection is
+    read as a fatal bus state. Polling until it is genuinely idle is cheap.
+    """
+    import time
+
+    state = -1
+    for _ in range(attempts):
+        r = xfer(bytes([CMD_STATUS, 0x00, 0x10]))  # status + cancel transfer
+        if r[1] != 0x00:
+            raise RuntimeError(f"cancel rejected with 0x{r[1]:02x}")
+        state = r[8]
+        if state == 0x00:
+            return I2C_STATE_NAMES[0x00]
+        time.sleep(0.002)
+    return I2C_STATE_NAMES.get(state, f"unknown (0x{state:02x})")
+
+
+@handler
 def clear_interrupt() -> None:
     """Clear the interrupt-on-change latch (Set SRAM, interrupt byte bit 0)."""
     _set_sram(b6=ALTER | 0b1)

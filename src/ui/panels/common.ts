@@ -26,6 +26,8 @@ export interface BoardInfo {
   chip: string;
   board: string;
   pins: string[];
+  /** Where the I2C engine settled after the connect-time cancel. */
+  i2cState: string;
 }
 
 export interface RuntimeInfo {

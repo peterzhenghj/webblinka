@@ -25,6 +25,7 @@ export class I2cPanel {
   readonly #summary: HTMLParagraphElement;
   readonly #cells = new Map<number, HTMLTableCellElement>();
   readonly #handlers: I2cPanelHandlers;
+  #scanned = false;
 
   constructor(handlers: I2cPanelHandlers) {
     this.#handlers = handlers;
@@ -50,6 +51,18 @@ export class I2cPanel {
   enable(): void {
     this.#scanButton.disabled = false;
     this.#frequency.disabled = false;
+    this.#scanned = false;
+  }
+
+  /** Scan the first time the bus is looked at, then leave it to the button. */
+  async scanOnce(): Promise<void> {
+    if (this.#scanned || this.#scanButton.disabled) return;
+    this.#scanned = true;
+    try {
+      await this.scan();
+    } catch {
+      // Already reported in the panel's summary line.
+    }
   }
 
   async scan(): Promise<number[]> {

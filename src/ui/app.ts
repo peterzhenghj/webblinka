@@ -108,7 +108,14 @@ export function mount(root: HTMLElement): void {
       onShow: () => gpio.show(),
       onHide: () => gpio.hide(),
     },
-    { id: "i2c", label: "I²C", content: el("div", {}, [i2c.root, gps.root]) },
+    {
+      id: "i2c",
+      label: "I²C",
+      content: el("div", {}, [i2c.root, gps.root]),
+      // Scanning writes to every address on the bus, so it happens when you ask
+      // to look at the bus -- not as a side effect of plugging something in.
+      onShow: () => void i2c.scanOnce(),
+    },
     { id: "python", label: "Python", content: console_.root },
   ]);
 
@@ -213,8 +220,13 @@ async function start(
     ui.tabs.enable();
     ui.status.set(`Connected — ${label}`, "ok");
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
-
-    await ui.i2c.scan();
+    if (board.i2cState !== "idle") {
+      ui.log.write(
+        `I²C engine came up in "${board.i2cState}" rather than idle. Something on ` +
+          `the bus may be holding SDA low.`,
+        "stderr",
+      );
+    }
   } catch (err) {
     ui.status.set("Failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");

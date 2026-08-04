@@ -101,6 +101,15 @@ export class Mcp2221Emulator {
   #adc: [number, number, number] = [0, 0, 0];
   #dac = 0;
   #clockDivider = 0x75; // ~100 kHz
+  /**
+   * Status polls a cancel takes to reach idle. Zero matches a chip that is
+   * never asked to cancel mid-transfer; raise it to reproduce the window where
+   * a command issued too soon after a cancel is rejected as busy.
+   */
+  cancelLatency = 0;
+  /** Test hook: every address a write command targets, and its payload length. */
+  onProbe: ((address: number, length: number) => void) | null = null;
+  #cancelPending = 0;
   #i2cState = STATE_IDLE;
   #addrNacked = false;
   #write: PendingWrite | null = null;
@@ -144,6 +153,10 @@ export class Mcp2221Emulator {
       this.#resetState();
       return null;
     }
+
+    // A cancel in flight winds down as time passes, which here means as
+    // commands go by -- independently of what those commands are asking for.
+    if (this.#cancelPending > 0 && --this.#cancelPending === 0) this.#settle();
 
     const reply = new Uint8Array(REPORT_SIZE);
     reply[0] = command;
@@ -191,16 +204,29 @@ export class Mcp2221Emulator {
 
   #status(report: Uint8Array, reply: Uint8Array): void {
     if (report[2] === 0x10) {
-      const wasBusy = this.#i2cState !== STATE_IDLE || this.#write !== null || this.#read !== null;
-      this.#i2cState = STATE_IDLE;
-      this.#write = null;
-      this.#read = null;
-      // 0x10 means "marked for cancellation"; Blinka then waits for the bus.
-      reply[2] = wasBusy ? 0x10 : 0x00;
+      const busy = this.#i2cState !== STATE_IDLE || this.#write !== null || this.#read !== null;
+      // A cancel is a request, not an instruction the engine obeys at once: the
+      // datasheet gives it "a few hundred microseconds" to release the bus.
+      // cancelLatency models that, because a chip that cancels instantly hides
+      // the exact bug this emulator exists to catch. Asking again while one is
+      // already in flight does not restart the wind-down -- the engine runs on
+      // its own clock, not on how often it is polled.
+      if (!busy) {
+        this.#settle();
+      } else if (this.#cancelPending === 0) {
+        if (this.cancelLatency > 0) this.#cancelPending = this.cancelLatency;
+        else this.#settle();
+      }
+      // 0x10 means "marked for cancellation", 0x11 that it is already idle.
+      reply[2] = this.#cancelPending > 0 ? 0x10 : 0x11;
     }
     if (report[3] === 0x20) {
-      this.#clockDivider = report[4] ?? this.#clockDivider;
-      reply[3] = 0x20; // divider accepted
+      if (this.#cancelPending > 0) {
+        reply[3] = 0x00; // the divider is only accepted while idle
+      } else {
+        this.#clockDivider = report[4] ?? this.#clockDivider;
+        reply[3] = 0x20; // divider accepted
+      }
     }
 
     reply[8] = this.#i2cState;
@@ -373,6 +399,16 @@ export class Mcp2221Emulator {
   #i2cWrite(command: number, report: Uint8Array, reply: Uint8Array): void {
     const total = (report[1] ?? 0) | ((report[2] ?? 0) << 8);
     const address = (report[3] ?? 0) >> 1;
+    this.onProbe?.(address, total);
+
+    if (this.#cancelPending > 0) {
+      // The engine has not finished winding down from a cancel. It rejects the
+      // command and echoes the state it is still in -- which is what Blinka
+      // reads as "Unrecoverable I2C state failure".
+      reply[1] = 0x01;
+      reply[2] = this.#i2cState;
+      return;
+    }
 
     if (!this.#bus.has(address)) {
       // Real hardware accepts the command and reports the NACK in the status
@@ -448,6 +484,14 @@ export class Mcp2221Emulator {
   /** Simulate an edge on GP1 when it is designated for interrupt detection. */
   triggerInterrupt(): void {
     this.#interruptDetected = true;
+  }
+
+  /** The engine has finished cancelling: bus released, transfers abandoned. */
+  #settle(): void {
+    this.#cancelPending = 0;
+    this.#i2cState = STATE_IDLE;
+    this.#write = null;
+    this.#read = null;
   }
 
   #resetState(): void {
