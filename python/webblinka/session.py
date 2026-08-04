@@ -7,6 +7,8 @@ should work here unchanged.
 
 from __future__ import annotations
 
+import contextlib
+
 from typing import Any
 
 from .rpc import handler
@@ -221,9 +223,11 @@ def gpio_configure(name: str, mode: str) -> dict[str, Any]:
             digitalio.Direction.INPUT if mode == "input" else digitalio.Direction.OUTPUT
         )
     elif mode == "analog_in":
-        obj = analogio.AnalogIn(pin)
+        with _reference_preserved():
+            obj = analogio.AnalogIn(pin)
     elif mode == "analog_out":
-        obj = analogio.AnalogOut(pin)
+        with _reference_preserved():
+            obj = analogio.AnalogOut(pin)
     else:
         # A dedicated chip function. There is no CircuitPython object to hold,
         # just a designation to write.
@@ -281,6 +285,39 @@ def gpio_read_all() -> list[dict[str, Any]]:
         for name, entry in list(_pins.items())
         if entry["kind"] in ("digital", "adc", "dac")
     ]
+
+
+@contextlib.contextmanager
+def _reference_preserved():
+    """Keep the chip-wide ADC/DAC reference across an analogio construction.
+
+    Blinka's AnalogIn and AnalogOut call adc_configure() and dac_configure()
+    with their default vref of 0, which writes a reference byte of 0x80 -- the
+    alter flag with every field zero, meaning "use Vdd". So merely designating a
+    pin as an ADC silently discards whatever reference the user selected.
+
+    That is worse than untidy. Against Vdd the converter measures relative to
+    the USB rail, so anything that loads the rail -- another pin switching, say
+    -- moves every reading at once, and a pin appears to be influencing its
+    neighbour when the reference is what actually moved.
+    """
+    from . import mcp2221_chip
+
+    before = mcp2221_chip.sram_settings()["gp"]
+    try:
+        yield
+    finally:
+        after = mcp2221_chip.sram_settings()["gp"]
+        for kind, restore in (
+            ("adc", mcp2221_chip.set_adc_reference),
+            ("dac", mcp2221_chip.set_dac_reference),
+        ):
+            was, now = before[kind], after[kind]
+            if (was["referenceVoltage"], was["referenceOption"]) != (
+                now["referenceVoltage"],
+                now["referenceOption"],
+            ):
+                restore(was["referenceVoltage"], was["referenceOption"])
 
 
 def _require_pin(name: str) -> dict[str, Any]:

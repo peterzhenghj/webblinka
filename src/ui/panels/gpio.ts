@@ -180,10 +180,16 @@ export class GpioPanel {
         labelled("Voltage", dacVoltage),
         labelled("Source", dacOption),
       ]),
-      group("ADC reference", "Applies to every pin designated as an ADC.", [
-        labelled("Voltage", adcVoltage),
-        labelled("Source", adcOption),
-      ]),
+      group(
+        "ADC reference",
+        "Applies to every pin designated as an ADC. Vdd measures against the USB " +
+          "rail, so anything that loads it — another pin switching, say — moves " +
+          "every channel at once. Vrm is an internal reference and is steadier.",
+        [
+          labelled("Voltage", adcVoltage),
+          labelled("Source", adcOption),
+        ],
+      ),
       group("Interrupt on change", "Edge GP1 detects when designated for interrupts.", [
         labelled("Edge", edge),
       ]),
