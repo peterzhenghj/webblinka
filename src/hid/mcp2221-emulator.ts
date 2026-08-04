@@ -33,6 +33,8 @@ const STATE_ADDR_NACK = 0x25;
 const STATE_WRITING_NO_STOP = 0x45;
 /** Trying to issue a STOP. Sticks here when a device is holding the bus. */
 const STATE_STOP = 0x60;
+/** A STOP that never completed. */
+const STATE_STOP_TIMEOUT = 0x62;
 
 // Status byte 20 flags, and Get-I2C-Data result codes.
 const FLAG_ADDR_NACK = 0x40;
@@ -118,10 +120,17 @@ export class Mcp2221Emulator {
    * hardware -- which is exactly what happened.
    */
   cancelRestartsOnRepeat = true;
+  /**
+   * Whether cancelling an already-idle engine leaves it reporting a stop
+   * timeout. Also defaulted on, and for the same reason: assuming the chip
+   * forgives a pointless command is how you ship one.
+   */
+  stopTimeoutOnSpuriousCancel = true;
   /** Test hook: every address a write command targets, and its payload length. */
   onProbe: ((address: number, length: number) => void) | null = null;
   #cancelPending = 0;
   #wedged = false;
+  #justSettled = false;
   #linesLow = false;
   #i2cState = STATE_IDLE;
   #addrNacked = false;
@@ -169,7 +178,11 @@ export class Mcp2221Emulator {
 
     // A cancel in flight winds down as time passes, which here means as
     // commands go by -- independently of what those commands are asking for.
-    if (this.#cancelPending > 0 && --this.#cancelPending === 0) this.#settle();
+    this.#justSettled = false;
+    if (this.#cancelPending > 0 && --this.#cancelPending === 0) {
+      this.#settle();
+      this.#justSettled = true;
+    }
 
     const reply = new Uint8Array(REPORT_SIZE);
     reply[0] = command;
@@ -225,7 +238,19 @@ export class Mcp2221Emulator {
       // already in flight does not restart the wind-down -- the engine runs on
       // its own clock, not on how often it is polled.
       if (!busy) {
-        this.#settle();
+        // Cancelling means driving a STOP, and an idle engine has no
+        // transaction for that STOP to terminate. On an empty bus it never
+        // completes, so a chip that was fine now reports a stop timeout -- the
+        // fault entirely manufactured by asking.
+        //
+        // Unless the engine reached idle by finishing the cancel we already
+        // asked for, in the very command carrying this one. Then it is
+        // completing a real request, not being handed a pointless second one.
+        if (this.stopTimeoutOnSpuriousCancel && !this.#justSettled) {
+          this.#i2cState = STATE_STOP_TIMEOUT;
+        } else {
+          this.#settle();
+        }
       } else if (this.#cancelPending === 0 || this.cancelRestartsOnRepeat) {
         if (this.cancelLatency > 0) this.#cancelPending = this.cancelLatency;
         else this.#settle();

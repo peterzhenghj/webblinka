@@ -43,7 +43,7 @@ test("waiting for idle does not re-send the cancel", async () => {
   assert.deepEqual([bus.scl, bus.sda], [1, 1]);
 });
 
-test("force_idle polls until the engine is genuinely idle", async () => {
+test("the bus works again after being left mid-NACK", async () => {
   const chip = demoChip();
   const { call } = await bootStack({ chip });
   await call("connect");
@@ -52,10 +52,27 @@ test("force_idle polls until the engine is genuinely idle", async () => {
   // Leave the engine mid-NACK, the state a scan keeps landing in.
   await assert.rejects(() => call("gps_start", 0x77));
 
-  const bus = await call("force_idle");
-  assert.equal(bus.idle, true);
-  assert.equal(bus.state, "idle");
-  assert.equal((await call("chip_status")).i2c.stateName, "idle");
+  await call("force_idle");
+  // What matters is that transfers work, not what the state byte reads. The
+  // engine can legitimately still be showing the last thing it did -- a cancel
+  // arriving just after it settled leaves a stop timeout sitting there -- and
+  // an earlier version of this test asserted on that byte and so enshrined a
+  // false alarm as correct behaviour.
+  assert.deepEqual(await call("i2c_scan"), [0x10]);
+});
+
+test("connecting does not provoke an idle engine", async () => {
+  const chip = demoChip();
+  const { call } = await bootStack({ chip });
+
+  // Cancelling drives a STOP, and an idle engine has no transaction for it to
+  // terminate, so asking pointlessly is how you manufacture a stop timeout on a
+  // chip that was fine. Connect must look before it touches.
+  chip.stopTimeoutOnSpuriousCancel = true;
+
+  const board = await call("connect");
+  assert.equal(board.bus.state, "idle", "connect cancelled an engine that did not need it");
+  assert.deepEqual(await call("i2c_scan"), [0x10]);
 });
 
 test("connect reports the state the engine settled into", async () => {

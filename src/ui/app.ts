@@ -258,23 +258,36 @@ async function start(
  * stuck and a reset fixes it; either low and a device is holding the line, which
  * no amount of resetting the MCP2221 will change.
  */
+/**
+ * Say something about the bus only when there is something to say.
+ *
+ * The engine's state byte reports the last thing it did, not necessarily what
+ * is wrong with it — a NACKed probe or a cancel that arrived a moment late
+ * leaves a code sitting there that clears on the next transfer. Blinka treats a
+ * non-idle state as a thing to cancel and carry on from, not as a fault, and so
+ * should we: an earlier version announced a broken chip on the strength of that
+ * byte alone and was wrong every time.
+ *
+ * A line held low is different. That is measurable, unambiguous, and no amount
+ * of resetting the MCP2221 will release a line another device is pulling down.
+ */
 function reportBusState(ui: Ui, session: PythonSession, bus: BusState): void {
-  if (bus.idle) return;
-  const lines = `SCL ${bus.scl ? "high" : "low"}, SDA ${bus.sda ? "high" : "low"}`;
-  const held = !bus.scl || !bus.sda;
-  ui.log.write(
-    `I²C engine is stuck in "${bus.state}" and would not cancel (${lines}). ` +
-      (held
-        ? "A device on the bus is holding a line low. Check wiring and pull-ups; " +
-          "resetting the MCP2221 will not release someone else's line."
-        : "The bus itself is free, so this is the chip rather than the wiring — " +
-          "press Reset chip."),
-    "stderr",
-  );
-  // Nothing threw, so no traceback carries the trace. Report it anyway: a chip
-  // that says it is wedged on a free bus is at least as likely to be us
-  // misreading the reply as it is to be the hardware.
-  ui.log.write(session.trace.format(), "stderr");
+  if (!bus.scl || !bus.sda) {
+    ui.log.write(
+      `I²C bus is not free: SCL ${bus.scl ? "high" : "low"}, ` +
+        `SDA ${bus.sda ? "high" : "low"}. A device is holding a line down — ` +
+        `check wiring and pull-ups. Resetting the MCP2221 will not release it.`,
+      "stderr",
+    );
+    ui.log.write(session.trace.format(), "stderr");
+    return;
+  }
+  if (!bus.idle) {
+    ui.log.write(
+      `I²C engine reports "${bus.state}"; the bus itself is free. That is usually ` +
+        `a leftover code from the last transfer and clears on the next one.`,
+    );
+  }
 }
 
 async function resetChip(session: PythonSession, ui: Ui): Promise<void> {

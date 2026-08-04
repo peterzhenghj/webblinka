@@ -174,24 +174,35 @@ def force_idle(attempts: int = 8) -> dict[str, Any]:
     and the chip itself is stuck -- a reset clears that. Either one low means a
     device is holding the line and no amount of cancelling will help.
 
-    Note that the cancel is sent *once*. Repeating it on every poll re-triggers
-    the wind-down the poll is waiting on -- releasing the bus goes through a
-    STOP -- so a loop that keeps asking can hold the engine in exactly the state
-    it is trying to leave, and report a perfectly healthy chip as wedged.
+    Two rules, both learned the hard way, both about not provoking the chip:
+
+    Look before touching. Cancelling asks the engine to release the bus, which
+    means driving a STOP. Ask that of an engine that is already idle and has no
+    transaction to terminate and the STOP has nothing to complete against -- it
+    times out, and the engine that was perfectly fine now reports "stop timeout".
+    So read the status first and only cancel if there is something to cancel.
+
+    Then cancel *once*. Repeating it on every poll re-triggers the wind-down the
+    poll is waiting on, pinning the engine in the state it is trying to leave.
     """
     import time
 
-    r = xfer(bytes([CMD_STATUS, 0x00, 0x10]))  # status, and cancel any transfer
+    r = xfer(bytes([CMD_STATUS]))  # look first
     if r[1] != 0x00:
-        raise RuntimeError(f"cancel rejected with 0x{r[1]:02x}")
+        raise RuntimeError(f"status rejected with 0x{r[1]:02x}")
 
-    for _ in range(attempts):
-        if r[8] == 0x00:
-            break
-        time.sleep(0.002)
-        r = xfer(bytes([CMD_STATUS]))  # plain status: ask, do not re-cancel
+    if r[8] != 0x00:
+        r = xfer(bytes([CMD_STATUS, 0x00, 0x10]))  # status, and cancel the transfer
         if r[1] != 0x00:
-            raise RuntimeError(f"status rejected with 0x{r[1]:02x}")
+            raise RuntimeError(f"cancel rejected with 0x{r[1]:02x}")
+
+        for _ in range(attempts):
+            if r[8] == 0x00:
+                break
+            time.sleep(0.002)
+            r = xfer(bytes([CMD_STATUS]))  # plain status: ask, do not re-cancel
+            if r[1] != 0x00:
+                raise RuntimeError(f"status rejected with 0x{r[1]:02x}")
 
     state = r[8]
     return {

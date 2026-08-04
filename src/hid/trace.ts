@@ -47,7 +47,14 @@ export class HidTrace {
   }
 
   read(reply: Uint8Array): void {
-    this.#push({ at: performance.now(), out: this.#pendingOut ?? new Uint8Array(), in: reply });
+    // slice(), not the array itself: replies are postMessage'd onward with
+    // their buffer in the transfer list, so keeping a view would leave the
+    // trace holding a detached buffer that throws when it is finally read.
+    this.#push({
+      at: performance.now(),
+      out: this.#pendingOut ?? new Uint8Array(),
+      in: reply.slice(),
+    });
     this.#pendingOut = null;
   }
 

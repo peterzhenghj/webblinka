@@ -82,13 +82,25 @@ on a free bus is at least as likely to be us misreading the reply as it is to be
 the hardware. Python's traceback tells you which line raised; only the bytes tell
 you why, which matters when the hardware is on someone else's desk.
 
-Waiting for the engine to go idle sends the cancel **once** and then polls with a
-plain status read. Re-sending it every poll re-triggers the wind-down being
-waited on — releasing the bus goes through a STOP — so the loop pins the engine
-in the state it is trying to leave and reports a healthy chip as stuck.
-`Mcp2221Emulator.cancelRestartsOnRepeat` models that, and defaults to on: code
-that only works against the forgiving interpretation is code that breaks on real
-hardware.
+Two rules about not provoking the chip, both learned by breaking it:
+
+**Look before you cancel.** Cancelling drives a STOP, and an idle engine has no
+transaction for that STOP to terminate — on a quiet bus it times out, and a chip
+that was fine now reports `stop timeout`. `force_idle()` reads the status first
+and only cancels if there is something to cancel.
+
+**Then cancel once.** Re-sending it on every poll re-triggers the wind-down being
+waited on, pinning the engine in the state it is trying to leave.
+
+`Mcp2221Emulator.stopTimeoutOnSpuriousCancel` and `.cancelRestartsOnRepeat` model
+both, and both default to on: code that only works against the forgiving reading
+of the datasheet is code that breaks on real hardware.
+
+The engine's state byte is **not** treated as evidence of a fault. It reports the
+last thing the engine did, and a NACKed probe or a late cancel leaves a code
+sitting there that clears on the next transfer — Blinka itself just cancels and
+carries on. Only a line held low gets reported as a problem, because that is
+measurable and unambiguous.
 
 The MCP2221's cancel is a request the engine takes a few hundred microseconds to
 honour. Blinka waits a flat millisecond and then issues its next command, so when
