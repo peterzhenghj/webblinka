@@ -1,0 +1,22 @@
+{
+  "name": "webblinka",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Adafruit Blinka / CircuitPython in the browser, driving an MCP2221 over WebHID",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test 'test/node/*.test.mjs'",
+    "wheels": "uv run scripts/fetch_wheels.py"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/w3c-web-hid": "^1.0.7",
+    "pyodide": "^314.0.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

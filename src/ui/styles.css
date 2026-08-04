@@ -1,0 +1,368 @@
+/* Deliberately plain: a readable instrument panel, not a landing page. One
+   accent colour, thin rules, no gradients or shadows. */
+
+:root {
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --text: #1b1a17;
+  --muted: #6d6a63;
+  --line: #e3e0d9;
+  --line-strong: #cbc7bd;
+  --accent: #2f6f5e;
+  --accent-soft: #e6efeb;
+  --warn: #8a5a1c;
+  --error: #96322a;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --surface: #1e1f22;
+    --text: #e6e4df;
+    --muted: #97948d;
+    --line: #2e3034;
+    --line-strong: #43464b;
+    --accent: #7fbfa8;
+    --accent-soft: #22322d;
+    --warn: #d3a15e;
+    --error: #e0857b;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 5rem;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.masthead p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: 42rem;
+}
+
+/* ------------------------------------------------------------------- pills */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pill::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.pill[data-state="busy"]::before {
+  background: var(--warn);
+}
+.pill[data-state="ok"]::before {
+  background: var(--accent);
+}
+.pill[data-state="error"]::before {
+  background: var(--error);
+}
+.pill[data-state="ok"] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ panels */
+
+.panel {
+  margin-top: 1.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel > header h2 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.panel > .body {
+  padding: 1rem;
+}
+
+.panel > .body > p:first-child {
+  margin-top: 0;
+}
+.panel > .body > p:last-child {
+  margin-bottom: 0;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+button {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.8rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.4rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------- definitions */
+
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1.25rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------ address grid */
+
+.i2c-grid {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  border-collapse: collapse;
+}
+
+.i2c-grid th {
+  color: var(--muted);
+  font-weight: 400;
+  padding: 0.15rem 0.4rem;
+  text-align: right;
+}
+
+.i2c-grid td {
+  padding: 0.15rem 0.4rem;
+  text-align: center;
+  color: var(--line-strong);
+}
+
+.i2c-grid td[data-found="true"] {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.i2c-grid td[data-reserved="true"] {
+  color: transparent;
+}
+
+/* -------------------------------------------------------------- pin table */
+
+.pins {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.pins th[scope="row"] {
+  width: 3.5rem;
+  text-align: left;
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.pins td,
+.pins th {
+  padding: 0.35rem 0.5rem 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.pins tr:last-child td,
+.pins tr:last-child th {
+  border-bottom: none;
+}
+
+.pin-control {
+  width: 12rem;
+}
+
+.pin-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.pin-value {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- log panel */
+
+.log {
+  margin: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+.log .stderr {
+  color: var(--error);
+}
+
+.log .prompt {
+  color: var(--text);
+}
+
+.log .hint {
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------------- console */
+
+.console-input,
+.console-install {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 0.5rem 0.6rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.console-input:focus,
+.console-install:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.console-pypi {
+  margin-top: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.console-install {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line-strong);
+  border-left-width: 3px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+
+.notice[data-tone="error"] {
+  border-left-color: var(--error);
+}
+.notice[data-tone="warn"] {
+  border-left-color: var(--warn);
+}

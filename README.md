@@ -1,0 +1,100 @@
+# webblinka
+
+Run Adafruit's CircuitPython libraries in a browser tab, driving real I2C parts
+and GPIO through an [MCP2221][mcp2221] USB adapter over WebHID. No server, no
+install, no firmware — open the page, click Connect, and `import board` works.
+
+The Blinka stack is **unmodified**. `adafruit-blinka`,
+`adafruit-circuitpython-gps` and friends are installed straight from their PyPI
+wheels. The only thing this project had to write is a `hid` module.
+
+## How it works
+
+Blinka's MCP2221 driver needs exactly one native dependency: a module named
+`hid`, of which it uses `enumerate()` plus a device with
+`open`/`write`/`read`/`close`. [`python/hid.py`](python/hid.py) reimplements that
+slice on top of WebHID and shadows the real package on `sys.path`. Nothing else
+about Blinka changes.
+
+The awkward part is that hidapi's calls are blocking while WebHID's are
+promises. [WebAssembly JSPI][jspi] resolves it: Pyodide's `run_sync()` suspends
+the Python stack mid-call, the browser resolves the promise, and Python resumes
+none the wiser. That is also why there is no SharedArrayBuffer here — and so no
+COOP/COEP headers, which GitHub Pages cannot set anyway.
+
+```
+main thread                          dedicated worker
+───────────                          ────────────────
+UI panels (plain TS)                 Pyodide
+  │                                    ├─ hid.py  (shim on sys.path)
+  ├── navigator.hid.requestDevice()    ├─ adafruit_blinka (stock, from a wheel)
+  │     (needs a user gesture)         └─ webblinka/session.py + drivers/
+  │
+  └── HidTransport ◄──── postMessage ────► run_sync(promise)
+        ├─ WebHidTransport (real device)
+        └─ EmulatorTransport (demo mode / CI)
+```
+
+Python runs in a worker so a runaway driver loop cannot freeze the page. WebHID
+stays on the main thread because `requestDevice()` needs a user gesture, so each
+64-byte report round-trips over `postMessage` — invisible to Blinka thanks to
+JSPI.
+
+**Requirements: Chrome or Edge 137+ on desktop.** WebHID is Chromium-only and
+JSPI shipped in 137. The site says so plainly if either is missing.
+
+## Demo mode
+
+No adapter? [`src/hid/mcp2221-emulator.ts`](src/hid/mcp2221-emulator.ts) is a
+software MCP2221 speaking the same HID command protocol, with a synthetic
+PA1010D GPS on its I2C bus that acquires a fix over the first few seconds. The
+same emulator backs the test suite, so CI exercises the full stack — Pyodide,
+the shim, JSPI, stock Blinka — with no hardware attached.
+
+## Development
+
+Node comes from `.nvmrc` and must be new enough for unflagged JSPI (Node 24 is
+not; 25 and later are). Python only ever runs inside Pyodide, so uv's only job
+here is fetching the vendored wheels.
+
+```bash
+nvm use && npm install
+```
+
+| command | what it does |
+| --- | --- |
+| `npm run dev` | Vite dev server |
+| `npm test` | full stack in Node against the emulator |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run build` | typecheck + production build into `dist/` |
+| `npm run wheels` | re-vendor `public/wheels/` via `uv` |
+
+Imports carry explicit `.ts` extensions so Node can run `src/` directly with its
+built-in type stripping — that is how the tests exercise the real emulator and
+bootstrap code rather than a copy of them.
+
+### Adding a device panel
+
+1. Write a driver in `python/webblinka/drivers/` that wraps the stock
+   CircuitPython library and exposes `@handler` functions returning JSON-able
+   values. Register it in `python/webblinka/rpc.py`.
+2. Add its wheel to `REQUIREMENTS` in `scripts/fetch_wheels.py` and re-run
+   `npm run wheels`.
+3. Add a panel under `src/ui/panels/` and wire it up in `src/ui/app.ts`.
+4. For demo mode and tests, add a `VirtualI2cDevice` under `src/hid/devices/`.
+
+See [`gps_pa1010d.py`](python/webblinka/drivers/gps_pa1010d.py) and
+[`gps.ts`](src/ui/panels/gps.ts) for the shape.
+
+## Deployment
+
+`.github/workflows/deploy.yml` runs the test suite and publishes `dist/` to
+GitHub Pages on pushes to `main`. The Vite `base` defaults to `/webblinka/` for
+project pages; set `BASE_PATH=/` for a custom domain or a user/org page.
+
+Pyodide's ~10MB runtime loads from the jsDelivr CDN. The ~1.4MB of CircuitPython
+wheels are vendored in `public/wheels/` and served from the site itself, so a
+cold start does not depend on PyPI.
+
+[mcp2221]: https://www.microchip.com/en-us/product/MCP2221
+[jspi]: https://developer.chrome.com/blog/webassembly-jspi
