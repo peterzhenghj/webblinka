@@ -177,7 +177,7 @@ export function mount(root: HTMLElement): void {
     el("span", {
       text:
         " — no hardware is connected. Every reading below is generated in " +
-        "software.. Press Connect MCP2221 to use a real device.",
+        "software. Press Connect MCP2221 to use a real device.",
     }),
   ]);
 
@@ -185,7 +185,9 @@ export function mount(root: HTMLElement): void {
     el("div", { class: "masthead" }, [
       el("div", {}, [
         el("h1", { text: "webblinka" }),
-        el("p", { text: "Control I2C hardware from your browser using real CircuitPython drivers." }),
+        el("p", {
+          text: "Control I²C hardware from your browser using real CircuitPython drivers.",
+        }),
       ]),
       // Connecting is the one action available from anywhere, so it lives with
       // the state it changes rather than in a panel of its own.

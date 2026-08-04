@@ -29,7 +29,7 @@ export class I2cPanel {
 
   constructor(handlers: I2cPanelHandlers) {
     this.#handlers = handlers;
-    const p = panel("I2C bus");
+    const p = panel("I²C bus");
     this.root = p.root;
     this.#body = p.body;
 

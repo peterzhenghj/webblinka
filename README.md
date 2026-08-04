@@ -1,6 +1,6 @@
 # webblinka
 
-Run Adafruit's CircuitPython libraries in a browser tab, driving real I2C parts
+Run Adafruit's CircuitPython libraries in a browser tab, driving real I²C parts
 and GPIO through an [MCP2221][mcp2221] USB adapter over WebHID. No server, no
 install, no firmware — open the page, click Connect, and `import board` works.
 
@@ -145,7 +145,7 @@ reporting the wrong place.
 
 No adapter? [`src/hid/mcp2221-emulator.ts`](src/hid/mcp2221-emulator.ts) is a
 software MCP2221 speaking the same HID command protocol, with a synthetic
-PA1010D GPS on its I2C bus that acquires a fix over the first few seconds. The
+PA1010D GPS on its I²C bus that acquires a fix over the first few seconds. The
 same emulator backs the test suite, so CI exercises the full stack — Pyodide,
 the shim, JSPI, stock Blinka — with no hardware attached.
 
