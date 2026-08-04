@@ -18,6 +18,8 @@ export interface ChipStatus {
     pendingValue: number;
   };
   adc: { ch0: number; ch1: number; ch2: number };
+  /** Which channels are connected to a pin currently designated as an ADC. */
+  adcChannels: { channel: number; pin: string; enabled: boolean }[];
   interruptEdgeDetected: boolean;
   revision: { hardware: string; firmware: string };
 }
@@ -60,6 +62,9 @@ export class CommonPanel {
   readonly #handlers: CommonHandlers;
   readonly #board: HTMLElement;
   readonly #values = new Map<string, HTMLElement>();
+  readonly #adcPanel: HTMLElement;
+  readonly #adcBody: HTMLElement;
+  #adcShown = "";
   #timer: number | null = null;
   #polling = false;
 
@@ -71,14 +76,12 @@ export class CommonPanel {
     this.#board = boardPanel.body;
     this.#board.append(el("p", { class: "hint", text: "Not connected." }));
 
+    // The converter only reads a pin designated as an ADC, so a channel whose
+    // pin is a GPIO reports a number that means nothing. Rows appear and vanish
+    // with the designation, and the whole panel hides when none are analogue.
     const adc = panel("ADC");
-    adc.body.append(
-      this.#facts([
-        ["adc.ch0", "Channel 0 (GP1)"],
-        ["adc.ch1", "Channel 1 (GP2)"],
-        ["adc.ch2", "Channel 2 (GP3)"],
-      ]),
-    );
+    this.#adcPanel = adc.root;
+    this.#adcBody = adc.body;
 
     const interrupt = panel("Interrupt");
     const clear = el("button", { text: "Clear" });
@@ -164,9 +167,7 @@ export class CommonPanel {
       this.#polling = false;
     }
 
-    this.#set("adc.ch0", `${status.adc.ch0} · ${volts(status.adc.ch0)}`);
-    this.#set("adc.ch1", `${status.adc.ch1} · ${volts(status.adc.ch1)}`);
-    this.#set("adc.ch2", `${status.adc.ch2} · ${volts(status.adc.ch2)}`);
+    this.#renderAdc(status);
     this.#set("interrupt", status.interruptEdgeDetected ? "yes" : "no");
     this.#set("revision", `hardware ${status.revision.hardware}, firmware ${status.revision.firmware}`);
 
@@ -182,6 +183,29 @@ export class CommonPanel {
     this.#set("i2c.sda", status.i2c.sda ? "high" : "low");
     this.#set("i2c.acked", status.i2c.acked ? "yes" : "no");
     this.#set("i2c.pendingValue", String(status.i2c.pendingValue));
+  }
+
+  #renderAdc(status: ChipStatus): void {
+    const active = (status.adcChannels ?? []).filter((c) => c.enabled);
+    this.#adcPanel.hidden = active.length === 0;
+    if (active.length === 0) return;
+
+    // Only rebuild when the set of analogue pins changes; otherwise this runs
+    // once a second and would throw away the DOM every tick.
+    const signature = active.map((c) => c.pin).join(",");
+    if (signature !== this.#adcShown) {
+      this.#adcShown = signature;
+      for (const channel of active) this.#values.delete(`adc.${channel.channel}`);
+      this.#adcBody.replaceChildren(
+        this.#facts(active.map((c) => [`adc.${c.channel}`, `Channel ${c.channel} (${c.pin})`])),
+      );
+    }
+
+    const counts = [status.adc.ch0, status.adc.ch1, status.adc.ch2];
+    for (const channel of active) {
+      const value = counts[channel.channel] ?? 0;
+      this.#set(`adc.${channel.channel}`, `${value} · ${volts(value)}`);
+    }
   }
 
   #facts(rows: [key: string, label: string][]): HTMLElement {

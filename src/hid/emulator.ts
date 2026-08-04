@@ -10,6 +10,7 @@ import { ReportQueue, type HidDeviceInfo, type HidTransport, type Report } from 
  */
 export class EmulatorTransport implements HidTransport {
   droppedReports = 0;
+  lateReports = 0;
   readonly chip: Mcp2221Emulator;
   readonly #queue = new ReportQueue();
   readonly #transferDelayMs: number;
@@ -48,7 +49,9 @@ export class EmulatorTransport implements HidTransport {
     if (!this.#opened) throw new Error("emulated device is not open");
     // Anything unread when a new command goes out is an orphaned reply; see the
     // matching comment in WebHidTransport.write.
-    this.droppedReports += this.#queue.clear();
+    const stale = this.#queue.discardStale();
+    this.droppedReports += stale.orphaned;
+    this.lateReports += stale.late;
     await this.#delay();
     // Byte 0 is the hidapi report ID; the chip only sees the 64-byte report.
     const reply = this.chip.handle(data.subarray(1));

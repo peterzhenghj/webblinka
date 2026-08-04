@@ -56,8 +56,11 @@ JSPI shipped in 137. The site says so plainly if either is missing.
 Laid out after [johntalton/webapp-device-playground][playground], which gets the
 shape of an adapter UI right.
 
-- **Common** — the Status/Set Parameters report, polled once a second: live ADC
-  counts, the I²C engine's state machine, the interrupt latch, silicon revision.
+- **Common** — the Status/Set Parameters report, polled once a second: the I²C
+  engine's state machine, the interrupt latch, silicon revision, and ADC counts
+  for whichever pins are currently designated as ADCs. The converter is not
+  wired to a pin doing anything else, so those channels are hidden rather than
+  reporting a number that means nothing.
 - **USB Descriptors** — the identity in the chip's flash. Read-only; see
   [`mcp2221_chip.py`](python/webblinka/mcp2221_chip.py) for why.
 - **GPIO** — every pin designation the chip offers, not just in/out: SSPND,

@@ -24,6 +24,7 @@ export class PythonSession {
   };
   #transport: HidTransport | null = null;
   #seenDropped = 0;
+  #seenLate = 0;
   #nextId = 1;
   #booted: Promise<void> | null = null;
   #resolveBoot: (() => void) | null = null;
@@ -134,22 +135,40 @@ export class PythonSession {
 
   /**
    * The transport drops any reply still unread when the next command goes out.
-   * With calls serialised that should never happen, so if it does, say so --
-   * a silent resynchronisation would leave the next confusing bus error with no
-   * explanation attached to it.
+   *
+   * Two very different things cause that, and conflating them sends people
+   * hunting for a concurrency bug that is not there. A reply to a read that
+   * already timed out is explained -- the device answered late, we resynchronise
+   * and move on. A reply nobody was waiting for is not, and means two command
+   * streams crossed.
    */
   #reportDesync(): void {
     const dropped = this.#transport?.droppedReports ?? 0;
-    if (dropped <= this.#seenDropped) return;
-    const added = dropped - this.#seenDropped;
-    this.#seenDropped = dropped;
-    for (const fn of this.#listeners.log) {
-      fn(
+    const late = this.#transport?.lateReports ?? 0;
+
+    if (late > this.#seenLate) {
+      const added = late - this.#seenLate;
+      this.#seenLate = late;
+      this.#log(
+        "stdout",
+        `Discarded ${added} late HID ${added === 1 ? "reply" : "replies"} to a read ` +
+          `that had already timed out. The bus is back in step; no action needed.`,
+      );
+    }
+
+    if (dropped > this.#seenDropped) {
+      const added = dropped - this.#seenDropped;
+      this.#seenDropped = dropped;
+      this.#log(
         "stderr",
         `Discarded ${added} orphaned HID ${added === 1 ? "reply" : "replies"} — ` +
           `two command streams crossed on the bus. Please report this.`,
       );
     }
+  }
+
+  #log(stream: "stdout" | "stderr", text: string): void {
+    for (const fn of this.#listeners.log) fn(stream, text);
   }
 
   async #runHid(request: HidRequest): Promise<HidResponse> {

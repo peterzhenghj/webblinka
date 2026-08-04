@@ -39,6 +39,7 @@ export async function grantedMcp2221s(): Promise<HIDDevice[]> {
 
 export class WebHidTransport implements HidTransport {
   droppedReports = 0;
+  lateReports = 0;
   #device: HIDDevice;
   readonly #queue = new ReportQueue();
   #listening = false;
@@ -148,7 +149,9 @@ export class WebHidTransport implements HidTransport {
     // would shift every subsequent reply by one. Dropping it resynchronises.
     // With calls serialised this should never fire; the counter is how we find
     // out if it does.
-    this.droppedReports += this.#queue.clear();
+    const stale = this.#queue.discardStale();
+    this.droppedReports += stale.orphaned;
+    this.lateReports += stale.late;
 
     // hidapi convention: byte 0 is the report ID, the rest is the report.
     const reportId = data[0] ?? 0;

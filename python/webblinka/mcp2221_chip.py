@@ -44,6 +44,9 @@ FLASH_FACTORY_SERIAL = 0x05
 # Every "alter this field" flag in the Set SRAM command is the high bit.
 ALTER = 0x80
 
+# GP designation selecting the ADC, the same on every pin that has one.
+ADC_DESIGNATION = 0b010
+
 # USB string descriptors carry a 0x03 (STRING) descriptor type byte.
 USB_STRING_DESCRIPTOR_TYPE = 0x03
 
@@ -155,6 +158,27 @@ def chip_status() -> dict[str, Any]:
             "firmware": f"{chr(r[48])}.{chr(r[49])}",
         },
     }
+
+
+@handler
+def common_status() -> dict[str, Any]:
+    """Status plus the pin designations, in one call.
+
+    The Common tab wants both once a second: the status report for the live
+    figures, and the GP designations to know which of the three ADC channels
+    are connected to anything. Two commands in one call rather than two calls
+    keeps them consistent with each other and halves the trips through the
+    serialised queue.
+    """
+    status = chip_status()
+    sram = _sram()
+    # ADC channels 0-2 are GP1-GP3, and only report anything real when the pin
+    # is designated as an ADC -- otherwise the converter is not connected to it.
+    status["adcChannels"] = [
+        {"channel": pin - 1, "pin": f"G{pin}", "enabled": (sram[22 + pin] & 0b111) == ADC_DESIGNATION}
+        for pin in (1, 2, 3)
+    ]
+    return status
 
 
 @handler

@@ -44,7 +44,7 @@ export function mount(root: HTMLElement): void {
   const log = new LogPanel();
 
   const common = new CommonPanel({
-    status: () => session.call<ChipStatus>("chip_status"),
+    status: () => session.call<ChipStatus>("common_status"),
     clearInterrupt: () => session.call<void>("clear_interrupt"),
   });
 
@@ -120,8 +120,12 @@ export function mount(root: HTMLElement): void {
     { id: "python", label: "Python", content: console_.root },
   ]);
 
-  const connect = el("button", { class: "primary", text: "Connect MCP2221" });
-  const demo = el("button", { text: "Run the demo instead" });
+  // Connecting hardware is what people came for. The simulator is a fallback for
+  // the few who have none, so it reads as a quiet aside rather than a second
+  // button of equal weight -- offering them side by side is how someone ends up
+  // in the simulator without meaning to be.
+  const connect = el("button", { class: "primary large", text: "Connect MCP2221" });
+  const demo = el("button", { class: "linklike", text: "run the simulator instead" });
   const reset = el("button", {
     text: "Reset chip",
     hidden: true,
@@ -129,7 +133,8 @@ export function mount(root: HTMLElement): void {
       "Resets the MCP2221. Clears an I²C engine stuck somewhere a cancel cannot " +
       "reach — the software equivalent of unplugging it.",
   });
-  const intro = el("div", { class: "body" }, [
+
+  const connectPrompt = el("div", { class: "connect-prompt" }, [
     el("p", {
       class: "hint",
       text:
@@ -137,8 +142,18 @@ export function mount(root: HTMLElement): void {
         "CircuitPython libraries run unmodified in a Python runtime inside this " +
         "page and talk to the chip over WebHID — no server, no install.",
     }),
-    el("div", { class: "controls" }, [connect, demo, reset]),
+    connect,
+    el("p", { class: "aside" }, [
+      el("span", { text: "No adapter to hand? You can " }),
+      demo,
+      el("span", { text: " — everything works, but the readings are invented." }),
+    ]),
   ]);
+
+  // Replaces the prompt once there is a device: at that point the pitch is spent
+  // and what matters is what you are talking to.
+  const connected = el("div", { class: "connected-summary", hidden: true });
+  const intro = el("div", { class: "body" }, [connectPrompt, connected]);
 
   // Demo mode presents an interface identical to the real one, so every reading
   // it produces has to be labelled as invented. Otherwise a simulated GPS fix
@@ -181,6 +196,8 @@ export function mount(root: HTMLElement): void {
     gpio,
     i2c,
     console: console_,
+    connectPrompt,
+    connected,
     demoMode: false,
   };
 
@@ -228,6 +245,8 @@ interface Ui {
   gpio: GpioPanel;
   i2c: I2cPanel;
   console: ConsolePanel;
+  connectPrompt: HTMLElement;
+  connected: HTMLElement;
   /** Readings are software-generated, and every one of them must say so. */
   demoMode: boolean;
 }
@@ -264,10 +283,27 @@ async function start(
     await ui.gpio.enable();
     await ui.console.enable();
     ui.tabs.enable();
+
+    // The pitch has done its job; show what we are talking to instead.
+    ui.connectPrompt.hidden = true;
+    ui.connected.hidden = false;
     ui.reset.hidden = false;
+    ui.connected.replaceChildren(
+      el("dl", { class: "facts" }, [
+        el("dt", { text: "Device" }),
+        el("dd", { text: label }),
+        el("dt", { text: "Chip" }),
+        el("dd", { text: `${board.chip} · Blinka ${runtime.blinka} · Python ${runtime.python}` }),
+      ]),
+      el("div", { class: "controls" }, [ui.reset]),
+    );
+
     // "Demo" rather than "Connected": nothing is connected, and the pill is the
     // one thing on screen in every tab.
-    ui.status.set(ui.demoMode ? `Demo — ${label}` : `Connected — ${label}`, ui.demoMode ? "busy" : "ok");
+    ui.status.set(
+      ui.demoMode ? `Demo — ${label}` : `Connected — ${label}`,
+      ui.demoMode ? "busy" : "ok",
+    );
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
     reportBusState(ui, session, board.bus);
   } catch (err) {

@@ -23,10 +23,13 @@ from pyodide.ffi import run_sync
 
 __all__ = ["HIDException", "device", "enumerate"]
 
-# hidapi returns immediately when a report is already buffered; this bound only
-# applies when we are genuinely waiting on the device. The MCP2221 answers every
-# command in about a millisecond, so anything approaching this means trouble.
-DEFAULT_TIMEOUT_MS = 2000
+# hidapi's own read blocks forever, and Blinka is written against that, so this
+# bound exists only to stop a permanently wedged device hanging Python. The
+# MCP2221 answers in about a millisecond; the generous margin is not for the
+# device but for the page, because the reply is delivered on the main thread and
+# a stall there delays it. Two seconds turned out to be inside the range of an
+# ordinary hiccup, which failed transfers the device had in fact answered.
+DEFAULT_TIMEOUT_MS = 8000
 
 
 class HIDException(OSError):
