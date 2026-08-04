@@ -551,6 +551,54 @@ select {
   font-weight: 600;
 }
 
+/* ------------------------------------------------------------ device lists */
+
+.device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.device-row:last-child {
+  border-bottom: 0;
+}
+
+/* Something answered at an address this device claims. A suggestion, not a
+   identification -- I2C addresses are not unique across parts. */
+.device-row[data-detected="true"] strong::after {
+  content: " · detected";
+  color: var(--accent);
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+.device-catalogue {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.device-catalogue summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.device-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.25rem 0 0;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+}
+
 /* --------------------------------------------------------------- log panel */
 
 .log {

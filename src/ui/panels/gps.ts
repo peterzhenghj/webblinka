@@ -1,3 +1,4 @@
+import type { DevicePanel, DeviceSession } from "../../devices/panel.ts";
 import { el } from "../dom.ts";
 import { panel, statusPill } from "../panel.ts";
 
@@ -40,12 +41,6 @@ const USABLE_SNR = 20;
 /** Full-scale for the signal bars. Real receivers rarely exceed the mid-40s. */
 const MAX_SNR = 50;
 
-export interface GpsHandlers {
-  start(address: number): Promise<{ address: number }>;
-  poll(): Promise<GpsState>;
-  stop(): Promise<void>;
-}
-
 /**
  * Lock status first, because that is the thing you are actually waiting on --
  * then the evidence that it is making progress towards one.
@@ -54,32 +49,44 @@ export interface GpsHandlers {
  * first thirty seconds unless you can see the sky view: satellites appearing
  * and their signal climbing is the difference between "working on it" and "not
  * seeing any sky". That is why the signal bars are as prominent as the fix.
+ *
+ * The driver is already running by the time this exists -- the shell starts it
+ * when the panel is opened -- so there is no Start button, only polling that
+ * follows the tab being visible.
  */
-export class GpsPanel {
+export class GpsPanel implements DevicePanel {
   readonly root: HTMLElement;
   readonly #body: HTMLElement;
-  readonly #button: HTMLButtonElement;
-  readonly #status = statusPill("Not started");
-  readonly #handlers: GpsHandlers;
+  readonly #status = statusPill("Starting…", "busy");
+  readonly #session: DeviceSession;
   readonly #facts = new Map<string, HTMLElement>();
   readonly #progress = el("p", { class: "gps-progress", text: "" });
   readonly #sky = el("div", { class: "sky" });
   readonly #skyNote = el("p", { class: "hint", text: "Waiting for the first satellite report…" });
   readonly #raw = el("pre", { class: "log" });
-  readonly #hint: HTMLElement;
   #timer: number | null = null;
-  #running = false;
   #polling = false;
 
-  constructor(handlers: GpsHandlers) {
-    this.#handlers = handlers;
-    const p = panel("GPS — PA1010D");
+  constructor(session: DeviceSession) {
+    this.#session = session;
+    // No address here: the shell's device header already carries it, and panel
+    // titles are uppercased, which turns 0x10 into 0X10.
+    const p = panel("Fix");
     this.root = p.root;
     this.#body = p.body;
 
-    this.#button = el("button", { text: "Start", disabled: true });
-    this.#button.addEventListener("click", () => void this.toggle());
-    p.actions.append(this.#status.node, this.#button);
+    const rate = el("select", { title: "Fix rate" });
+    for (const [ms, label] of [
+      ["1000", "1 Hz"],
+      ["2000", "0.5 Hz"],
+      ["200", "5 Hz"],
+    ] as const) {
+      rate.append(el("option", { value: ms, text: label, selected: ms === "1000" }));
+    }
+    rate.addEventListener("change", () => {
+      void this.#session.command("set_rate", Number(rate.value));
+    });
+    p.actions.append(this.#status.node, rate);
 
     const facts = el("dl", { class: "facts" });
     for (const [key, label] of [
@@ -99,12 +106,7 @@ export class GpsPanel {
       facts.append(el("dt", { text: label }), value);
     }
 
-    this.#hint = el("p", {
-      class: "hint",
-      text: "Scan the bus first; the module answers at 0x10.",
-    });
     this.#body.append(
-      this.#hint,
       this.#progress,
       el("div", { class: "sky-block" }, [
         el("h3", { class: "subhead", text: "Satellites in view" }),
@@ -116,41 +118,17 @@ export class GpsPanel {
     );
   }
 
-  /** Called after a scan; the panel only offers to start if the part is there. */
-  setPresent(present: boolean): void {
-    this.#button.disabled = !present;
-    if (!present) this.#status.set("Not on the bus", "idle");
-    else if (!this.#running) this.#status.set("Ready", "idle");
+  show(): void {
+    if (this.#timer !== null) return;
+    this.#timer = setInterval(() => void this.#poll(), POLL_INTERVAL_MS) as unknown as number;
+    void this.#poll();
   }
 
-  async toggle(): Promise<void> {
-    if (this.#running) {
-      await this.stop();
-      return;
-    }
-    this.#button.disabled = true;
-    try {
-      await this.#handlers.start(0x10);
-      this.#running = true;
-      this.#hint.remove();
-      this.#button.textContent = "Stop";
-      this.#status.set("Acquiring…", "busy");
-      this.#timer = setInterval(() => void this.#poll(), POLL_INTERVAL_MS) as unknown as number;
-      await this.#poll();
-    } catch (err) {
-      this.#status.set(err instanceof Error ? err.message : String(err), "error");
-    } finally {
-      this.#button.disabled = false;
-    }
-  }
-
-  async stop(): Promise<void> {
+  hide(): void {
+    // A receiver keeps its almanac and its fix while nobody is watching, so
+    // stopping the polling costs nothing but the bus traffic it saves.
     if (this.#timer !== null) clearInterval(this.#timer);
     this.#timer = null;
-    this.#running = false;
-    this.#button.textContent = "Start";
-    this.#status.set("Stopped", "idle");
-    await this.#handlers.stop();
   }
 
   async #poll(): Promise<void> {
@@ -159,7 +137,7 @@ export class GpsPanel {
     this.#polling = true;
     let state: GpsState;
     try {
-      state = await this.#handlers.poll();
+      state = await this.#session.poll<GpsState>();
     } catch (err) {
       this.#status.set(err instanceof Error ? err.message : String(err), "error");
       return;

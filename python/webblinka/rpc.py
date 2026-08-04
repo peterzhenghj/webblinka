@@ -54,6 +54,8 @@ def _load_handlers() -> None:
     """
     if _HANDLERS:
         return
-    # Imported for their @handler side effects.
+    # Imported for their @handler side effects. Every driver module has to be
+    # listed here, which is also what makes it discoverable from the page.
     from . import console, mcp2221_chip, session  # noqa: F401
+    from .drivers import base  # noqa: F401
     from .drivers import gps_pa1010d  # noqa: F401

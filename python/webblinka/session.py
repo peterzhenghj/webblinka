@@ -67,8 +67,14 @@ def rebuild_bus() -> dict[str, Any]:
 
     from . import mcp2221_chip
 
+    from .drivers import base as drivers
+
     bus_state = mcp2221_chip.resync()
     _pins.clear()  # a reset returned every pin to its flash default
+    # Running drivers hold the old bus object and, more to the point, whatever
+    # configuration they wrote to their device has not survived either.
+    for handle in drivers.device_active():
+        drivers.device_stop(handle)
     _i2c = busio.I2C(board.SCL, board.SDA)
     return bus_state
 

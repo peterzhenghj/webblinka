@@ -26,12 +26,11 @@ import {
   type PinModeSpec,
   type PinState,
 } from "./panels/gpio.ts";
-import { GpsPanel, type GpsState } from "./panels/gps.ts";
+import { DeviceManager } from "../devices/manager.ts";
+import { DevicesPanel } from "./panels/devices.ts";
 import { I2cPanel } from "./panels/i2c.ts";
 import { LogPanel } from "./panels/log.ts";
 import { Tabs } from "./tabs.ts";
-
-const PA1010D_ADDRESS = 0x10;
 
 /** JSPI is what lets synchronous Blinka code await WebHID. Chrome 137+. */
 function hasJspi(): boolean {
@@ -66,16 +65,16 @@ export function mount(root: HTMLElement): void {
     setInterruptEdge: (edge) => session.call("set_interrupt_edge", edge),
   });
 
-  const gps = new GpsPanel({
-    start: (address) => session.call<{ address: number }>("gps_start", address),
-    poll: () => session.call<GpsState>("gps_poll"),
-    stop: () => session.call<void>("gps_stop"),
-  });
+  // The device list needs the manager, the manager needs the tab strip, and the
+  // strip needs this tab's content -- so the container is made first and filled
+  // once the cycle is closed.
+  const busTab = el("div");
+  let devicesPanel: DevicesPanel | null = null;
 
   const i2c = new I2cPanel({
     scan: async () => {
       const found = await session.call<number[]>("i2c_scan");
-      gps.setPresent(found.includes(PA1010D_ADDRESS));
+      devicesPanel?.setScan(found);
       return found;
     },
     setFrequency: async (hz) => void (await session.call("set_i2c_frequency", hz)),
@@ -112,13 +111,18 @@ export function mount(root: HTMLElement): void {
     {
       id: "i2c",
       label: "I²C",
-      content: el("div", {}, [i2c.root, gps.root]),
+      content: busTab,
       // Scanning writes to every address on the bus, so it happens when you ask
       // to look at the bus -- not as a side effect of plugging something in.
       onShow: () => void i2c.scanOnce(),
     },
     { id: "python", label: "Python", content: console_.root },
   ]);
+
+  const deviceManager = new DeviceManager(session, tabs);
+  devicesPanel = new DevicesPanel(deviceManager);
+  const devices = devicesPanel;
+  busTab.append(i2c.root, devices.root);
 
   // Connecting hardware is what people came for. The simulator is a fallback for
   // the few who have none, so it reads as a quiet aside rather than a second
@@ -173,7 +177,7 @@ export function mount(root: HTMLElement): void {
     el("div", { class: "masthead" }, [
       el("div", {}, [
         el("h1", { text: "webblinka" }),
-        el("p", { text: "CircuitPython drivers, in the browser, driving real I2C hardware." }),
+        el("p", { text: "Control I2C hardware from your browser using real CircuitPython drivers." }),
       ]),
     ]),
     demoBanner,
@@ -196,6 +200,7 @@ export function mount(root: HTMLElement): void {
     gpio,
     i2c,
     console: console_,
+    deviceManager,
     connectPrompt,
     connected,
     demoMode: false,
@@ -245,6 +250,7 @@ interface Ui {
   gpio: GpioPanel;
   i2c: I2cPanel;
   console: ConsolePanel;
+  deviceManager: DeviceManager;
   connectPrompt: HTMLElement;
   connected: HTMLElement;
   /** Readings are software-generated, and every one of them must say so. */
@@ -354,9 +360,11 @@ function reportBusState(ui: Ui, session: PythonSession, bus: BusState): void {
 
 async function resetChip(session: PythonSession, ui: Ui): Promise<void> {
   ui.reset.disabled = true;
-  // Nothing may talk to the device while it is away.
+  // Nothing may talk to the device while it is away. Drivers hold a bus the
+  // reset is about to invalidate, so they close rather than pause.
   ui.common.stop();
   ui.gpio.hide();
+  await ui.deviceManager.closeAll();
   ui.status.set("Resetting…", "busy");
   ui.log.write("Resetting the chip; it will drop off USB and re-enumerate.");
   try {

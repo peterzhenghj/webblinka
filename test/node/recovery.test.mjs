@@ -50,7 +50,7 @@ test("the bus works again after being left mid-NACK", async () => {
 
   chip.cancelLatency = 4;
   // Leave the engine mid-NACK, the state a scan keeps landing in.
-  await assert.rejects(() => call("gps_start", 0x77));
+  await assert.rejects(() => call("device_start", "pa1010d", 0x77));
 
   await call("force_idle");
   // What matters is that transfers work, not what the state byte reads. The

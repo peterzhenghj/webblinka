@@ -171,20 +171,40 @@ Imports carry explicit `.ts` extensions so Node can run `src/` directly with its
 built-in type stripping — that is how the tests exercise the real emulator and
 bootstrap code rather than a copy of them.
 
-### Adding a device panel
+### Adding a device
 
-1. Write a driver in `python/webblinka/drivers/` that wraps the stock
-   CircuitPython library and exposes `@handler` functions returning JSON-able
-   values. Register it in `python/webblinka/rpc.py`.
-2. Add its wheel to `REQUIREMENTS` in `scripts/fetch_wheels.py` and re-run
-   `npm run wheels`.
-3. Add a panel under `src/ui/panels/` and give it a tab in `src/ui/app.ts`. A
-   panel that polls should stop on the tab's `onHide` — every tick is real
-   traffic competing for the bus.
-4. For demo mode and tests, add a `VirtualI2cDevice` under `src/hid/devices/`.
+Three pieces, and nothing else changes — not the RPC layer, not the tab shell,
+not the scanner:
+
+1. A `Driver` subclass in [`python/webblinka/drivers/`](python/webblinka/drivers/)
+   with `start` / `poll` / `command` / `stop`, decorated `@register("your-id")`,
+   and imported in `rpc.py`'s `_load_handlers`.
+2. A panel implementing [`DevicePanel`](src/devices/panel.ts). It is handed a
+   session bound to one running instance and never learns its own address or
+   handle, so the same class serves two of the same part on one bus.
+3. An entry in [`src/devices/catalog.ts`](src/devices/catalog.ts) listing every
+   I²C address the part can answer at.
+
+The addresses are what connect a scan to a panel. A scan proposes matching
+devices and the person decides — an address only says *something* answered, and
+parts share addresses, so detection is never taken as identification. Nothing
+talks to a device until you open it, which matters because starting a driver
+configures the part.
+
+If you add a wheel, remember `scripts/fetch_wheels.py`.
+
+A panel that polls must stop on `hide()` — every tick is real traffic competing
+for the bus. And add a `VirtualI2cDevice` under `src/hid/devices/` so the part
+works in demo mode and in CI without hardware.
 
 See [`gps_pa1010d.py`](python/webblinka/drivers/gps_pa1010d.py) and
 [`gps.ts`](src/ui/panels/gps.ts) for the shape.
+
+### Adding a chip-level panel
+
+Panels for the MCP2221 itself — rather than something on its bus — are plain
+`@handler` functions plus a static tab in `src/ui/app.ts`. GPIO and Common work
+this way.
 
 ## Deployment
 

@@ -11,8 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from ..rpc import handler
-from ..session import i2c
+from .base import Driver, register
 
 DEFAULT_ADDRESS = 0x10
 
@@ -21,115 +20,134 @@ DEFAULT_ADDRESS = 0x10
 # module stall the UI's polling interval.
 POLL_BUDGET_S = 0.6
 
-_gps = None
-_sentences: list[str] = []
-_started = 0.0
-_first_fix: float | None = None
-_sentence_count = 0
 
 
-@handler
-def gps_start(address: int = DEFAULT_ADDRESS) -> dict[str, Any]:
-    """Attach to the module and ask it for the sentences we actually parse."""
-    global _gps, _started, _first_fix, _sentence_count
-    import adafruit_gps
+@register("pa1010d")
+class Pa1010dGps(Driver):
+    """Adafruit Mini GPS PA1010D, and other GTop-based I2C receivers."""
 
-    _gps = adafruit_gps.GPS_GtopI2C(i2c(), address=address, timeout=POLL_BUDGET_S)
-    _sentences.clear()
-    _started = time.monotonic()
-    _first_fix = None
-    _sentence_count = 0
+    def __init__(self, bus, address: int = DEFAULT_ADDRESS) -> None:
+        super().__init__(bus, address)
+        self._gps = None
+        self._sentences: list[str] = []
+        self._started = 0.0
+        self._first_fix: float | None = None
+        self._sentence_count = 0
 
-    # PMTK314 sets a per-sentence output rate, counted in fixes: GLL, RMC, VTG,
-    # GGA, GSA, GSV, then unused. RMC and GGA every fix for position; GSA every
-    # fix for the dilution figures and which satellites are in the solution; GSV
-    # only every fifth, because it is several sentences of satellites-in-view
-    # and each one costs hundreds of byte-at-a-time reads over HID.
-    _gps.send_command(b"PMTK314,0,1,0,1,1,5,0,0,0,0,0,0,0,0,0,0,0,0,0")
-    _gps.send_command(b"PMTK220,1000")
-    return {"address": address}
+    def start(self) -> dict[str, Any]:
+        """Attach to the module and ask it for the sentences we actually parse."""
+        import adafruit_gps
 
+        self._gps = adafruit_gps.GPS_GtopI2C(
+            self.bus, address=self.address, timeout=POLL_BUDGET_S
+        )
+        self._sentences.clear()
+        self._started = time.monotonic()
+        self._first_fix = None
+        self._sentence_count = 0
 
-@handler
-def gps_stop() -> None:
-    global _gps
-    _gps = None
-    _sentences.clear()
+        # PMTK314 sets a per-sentence output rate, counted in fixes: GLL, RMC,
+        # VTG, GGA, GSA, GSV, then unused. RMC and GGA every fix for position;
+        # GSA every fix for the dilution figures and which satellites are in the
+        # solution; GSV only every fifth, because it is several sentences of
+        # satellites-in-view and each one costs hundreds of byte-at-a-time reads
+        # over HID.
+        self._gps.send_command(b"PMTK314,0,1,0,1,1,5,0,0,0,0,0,0,0,0,0,0,0,0,0")
+        self._gps.send_command(b"PMTK220,1000")
+        return {"address": self.address}
 
+    def stop(self) -> None:
+        self._gps = None
+        self._sentences.clear()
 
-@handler
-def gps_poll() -> dict[str, Any]:
-    """Pump the parser for a bounded slice of time and report the fix."""
-    global _first_fix, _sentence_count
+    def command(self, name: str, args: list[Any]) -> Any:
+        if name == "send_pmtk":
+            # Raw PMTK for anything the panel does not wrap; the checksum is
+            # adafruit_gps's job.
+            self._require().send_command(str(args[0]).encode("ascii"))
+            return True
+        if name == "set_rate":
+            self._require().send_command(f"PMTK220,{int(args[0])}".encode("ascii"))
+            return True
+        return super().command(name, args)
 
-    if _gps is None:
-        raise RuntimeError("GPS not started")
+    def poll(self) -> dict[str, Any]:
+        """Pump the parser for a bounded slice of time and report the fix."""
+        gps = self._require()
 
-    deadline = time.monotonic() + POLL_BUDGET_S
-    updates = 0
-    while time.monotonic() < deadline:
-        if not _gps.update():
-            break
-        updates += 1
-        sentence = _gps.nmea_sentence
-        if sentence:
-            _sentence_count += 1
-            _sentences.append(sentence.strip())
-            del _sentences[:-12]
+        deadline = time.monotonic() + POLL_BUDGET_S
+        updates = 0
+        while time.monotonic() < deadline:
+            if not gps.update():
+                break
+            updates += 1
+            sentence = gps.nmea_sentence
+            if sentence:
+                self._sentence_count += 1
+                self._sentences.append(sentence.strip())
+                del self._sentences[:-12]
 
-    has_fix = bool(_gps.has_fix)
-    if has_fix and _first_fix is None:
-        _first_fix = time.monotonic() - _started
+        has_fix = bool(gps.has_fix)
+        if has_fix and self._first_fix is None:
+            self._first_fix = time.monotonic() - self._started
 
-    return {
-        "hasFix": has_fix,
-        "has3dFix": bool(_gps.has_3d_fix),
-        "fixQuality": _gps.fix_quality,
-        "fixMode": _gps.fix_quality_3d,  # 1 none, 2 two-dimensional, 3 three
-        "satellites": _gps.satellites,
-        "sky": _sky_view(),
-        "latitude": _gps.latitude,
-        "longitude": _gps.longitude,
-        "altitudeM": _gps.altitude_m,
-        "geoidHeightM": _gps.height_geoid,
-        "pdop": _gps.pdop,
-        "hdop": _gps.hdop if _gps.hdop is not None else _gps.horizontal_dilution,
-        "vdop": _gps.vdop,
-        "speedKnots": _gps.speed_knots,
-        "trackAngleDeg": _gps.track_angle_deg,
-        "timestampUtc": _format_timestamp(_gps.timestamp_utc),
-        "elapsedS": round(time.monotonic() - _started, 1),
-        "timeToFirstFixS": round(_first_fix, 1) if _first_fix is not None else None,
-        "sentenceCount": _sentence_count,
-        "sentences": list(_sentences),
-        "updates": updates,
-    }
-
-
-def _sky_view() -> list[dict[str, Any]]:
-    """Every satellite the receiver can hear, strongest first.
-
-    This is the part worth watching before a fix: satellites appear and their
-    signal-to-noise climbs while the position is still unknown, which is the
-    difference between "it is working on it" and "it is not seeing the sky".
-
-    GSV reports what is *in view*; GSA reports which of those the solution
-    actually used. They are different sets, and the gap between them is what
-    says whether a weak sky is the reason there is no fix yet.
-    """
-    used = set(_gps.sat_prns or ())
-    sky = [
-        {
-            "prn": prn,
-            "elevation": info[1],
-            "azimuth": info[2],
-            "snr": info[3],
-            "used": prn in used,
+        return {
+            "hasFix": has_fix,
+            "has3dFix": bool(gps.has_3d_fix),
+            "fixQuality": gps.fix_quality,
+            "fixMode": gps.fix_quality_3d,  # 1 none, 2 two-dimensional, 3 three
+            "satellites": gps.satellites,
+            "sky": self._sky_view(),
+            "latitude": gps.latitude,
+            "longitude": gps.longitude,
+            "altitudeM": gps.altitude_m,
+            "geoidHeightM": gps.height_geoid,
+            "pdop": gps.pdop,
+            "hdop": gps.hdop if gps.hdop is not None else gps.horizontal_dilution,
+            "vdop": gps.vdop,
+            "speedKnots": gps.speed_knots,
+            "trackAngleDeg": gps.track_angle_deg,
+            "timestampUtc": _format_timestamp(gps.timestamp_utc),
+            "elapsedS": round(time.monotonic() - self._started, 1),
+            "timeToFirstFixS": (
+                round(self._first_fix, 1) if self._first_fix is not None else None
+            ),
+            "sentenceCount": self._sentence_count,
+            "sentences": list(self._sentences),
+            "updates": updates,
         }
-        for prn, info in (_gps.sats or {}).items()
-    ]
-    sky.sort(key=lambda sat: (-(sat["snr"] or 0), sat["prn"]))
-    return sky
+
+    def _require(self):
+        if self._gps is None:
+            raise RuntimeError("GPS not started")
+        return self._gps
+
+    def _sky_view(self) -> list[dict[str, Any]]:
+        """Every satellite the receiver can hear, strongest first.
+
+        This is the part worth watching before a fix: satellites appear and
+        their signal-to-noise climbs while the position is still unknown, which
+        is the difference between "it is working on it" and "it is not seeing
+        the sky".
+
+        GSV reports what is *in view*; GSA reports which of those the solution
+        actually used. They are different sets, and the gap between them is what
+        says whether a weak sky is the reason there is no fix yet.
+        """
+        gps = self._require()
+        used = set(gps.sat_prns or ())
+        sky = [
+            {
+                "prn": prn,
+                "elevation": info[1],
+                "azimuth": info[2],
+                "snr": info[3],
+                "used": prn in used,
+            }
+            for prn, info in (gps.sats or {}).items()
+        ]
+        sky.sort(key=lambda sat: (-(sat["snr"] or 0), sat["prn"]))
+        return sky
 
 
 def _format_timestamp(stamp) -> str | None:

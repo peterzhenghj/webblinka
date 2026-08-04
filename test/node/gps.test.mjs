@@ -12,11 +12,11 @@ test("adafruit_gps reaches a fix over the emulated bus", async () => {
   const { call } = await bootStack({ chip });
   await call("connect");
 
-  assert.deepEqual(await call("gps_start"), { address: 0x10 });
+  assert.equal((await call("device_start", "pa1010d", 0x10)).handle, "pa1010d@0x10");
 
   let state = null;
   for (let attempt = 0; attempt < 6 && !state?.hasFix; attempt++) {
-    state = await call("gps_poll");
+    state = await call("device_poll", "pa1010d@0x10");
   }
 
   assert.ok(state.hasFix, `never got a fix: ${JSON.stringify(state)}`);
@@ -35,12 +35,12 @@ test("the sky view reports per-satellite signal and which are in the fix", async
   const chip = demoChip({ acquireMs: 0 });
   const { call } = await bootStack({ chip });
   await call("connect");
-  await call("gps_start");
+  await call("device_start", "pa1010d", 0x10);
 
   // GSV goes out every fifth fix, so the sky view takes a few polls to arrive.
   let state = null;
   for (let attempt = 0; attempt < 12 && !state?.sky?.length; attempt++) {
-    state = await call("gps_poll");
+    state = await call("device_poll", "pa1010d@0x10");
   }
 
   assert.ok(state.sky.length > 0, `no satellites reported: ${JSON.stringify(state.sky)}`);
@@ -68,9 +68,9 @@ test("progress is reported before there is any fix to report", async () => {
   const chip = demoChip({ acquireMs: 60_000 });
   const { call } = await bootStack({ chip });
   await call("connect");
-  await call("gps_start");
+  await call("device_start", "pa1010d", 0x10);
 
-  const state = await call("gps_poll");
+  const state = await call("device_poll", "pa1010d@0x10");
   assert.equal(state.hasFix, false);
   // Without these, a GPS that is patiently acquiring is indistinguishable from
   // one that is broken -- which is the entire reason the panel shows them.
@@ -83,7 +83,7 @@ test("the driver configures the module on start", async () => {
   const chip = demoChip({ acquireMs: 0 });
   const { call } = await bootStack({ chip });
   await call("connect");
-  await call("gps_start");
+  await call("device_start", "pa1010d", 0x10);
 
   const [gps] = chip.devices;
   assert.ok(
@@ -96,5 +96,5 @@ test("the driver configures the module on start", async () => {
 test("polling before start is a clear error", async () => {
   const { call } = await bootStack({ chip: demoChip() });
   await call("connect");
-  await assert.rejects(() => call("gps_poll"), /GPS not started/);
+  await assert.rejects(() => call("device_poll", "pa1010d@0x10"), /not running/);
 });
