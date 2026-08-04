@@ -534,6 +534,56 @@ select {
   font-size: 0.9rem;
 }
 
+/* ------------------------------------------------------------- aht10 trend */
+
+.aht-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-width: 15rem;
+}
+
+.aht-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.aht-trace-temp,
+.aht-trace-humidity {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.aht-trace-temp {
+  stroke: var(--accent);
+}
+
+/* Humidity is the second trace, so it reads as secondary rather than fighting
+   the first for attention. */
+.aht-trace-humidity {
+  stroke: var(--muted);
+  stroke-dasharray: 4 3;
+}
+
+.aht-chart + .hint {
+  white-space: pre-line;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0.5rem 0 0;
+}
+
+.aht-note {
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--warn);
+}
+
+.aht-note:empty {
+  display: none;
+}
+
 /* --------------------------------------------------------- gps scatter plot */
 
 /* Readings left, scatter right. The second track is a definite width rather

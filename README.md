@@ -79,6 +79,16 @@ shape of an adapter UI right.
   cloud is the receiver's actual precision. No tiles, so no third party is told
   where the receiver is on every fix; there is a link out for when you do want
   streets, and following it is a decision rather than a side effect.
+- **Devices** — every I²C part with a driver, opened on request from the I²C
+  tab. Each gets its own tab:
+  - **PA1010D GPS** — see above.
+  - **AHT10 / AHT20** — temperature and humidity, plus the dew point and
+    absolute humidity the part does not measure, and a five-minute trend. The
+    trend earns its place: an AHT10 self-heats, so for a minute or two after
+    power-up it reads high on temperature and low on humidity, and a single
+    number gives no way to tell a settled reading from one still coming down.
+    The panel says which, and warns when the dew point is close enough to
+    ambient that surfaces will wet.
 - **Python** — the REPL and the PyPI installer.
 
 `input`/`output`/`analog_in`/`analog_out` go through `digitalio` and `analogio`,

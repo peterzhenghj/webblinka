@@ -49,6 +49,7 @@ REQUIREMENTS = [
     "pyserial==3.5",  # dep of pyftdi and binho-host-adapter
     # Device drivers backing the built-in panels.
     "adafruit-circuitpython-gps==3.11.9",  # PA1010D and friends
+    "adafruit-circuitpython-ahtx0==1.0.30",  # AHT10/AHT20/AHT21/DHT20
 ]
 
 ROOT = Path(__file__).resolve().parent.parent

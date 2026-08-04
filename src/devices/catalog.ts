@@ -1,4 +1,5 @@
 import type { DevicePanel, DeviceSession } from "./panel.ts";
+import { AhtPanel } from "../ui/panels/aht10.ts";
 import { GpsPanel } from "../ui/panels/gps.ts";
 
 /**
@@ -37,6 +38,15 @@ export const DEVICES: DeviceEntry[] = [
     addresses: [0x10],
     library: "adafruit_circuitpython_gps",
     create: (session) => new GpsPanel(session),
+  },
+  {
+    id: "aht10",
+    name: "AHT10 / AHT20",
+    description: "Temperature and humidity, with dew point derived",
+    // The whole AHTx0 family is strapped to 0x38 with no address pins.
+    addresses: [0x38],
+    library: "adafruit_circuitpython_ahtx0",
+    create: (session) => new AhtPanel(session),
   },
 ];
 

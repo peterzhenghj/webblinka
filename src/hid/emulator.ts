@@ -1,3 +1,4 @@
+import { VirtualAht10 } from "./devices/aht10.ts";
 import { VirtualPa1010d } from "./devices/pa1010d.ts";
 import { Mcp2221Emulator } from "./mcp2221-emulator.ts";
 import { MCP2221_PRODUCT_ID, MCP2221_VENDOR_ID } from "./webhid.ts";
@@ -88,6 +89,9 @@ export function defaultRig(): Mcp2221Emulator {
   // built the rig -- otherwise Pyodide's boot outlasts the acquisition and the
   // sky view is already full by the time anyone can look at it.
   chip.attach(new VirtualPa1010d({ acquireFromFirstCommand: true }));
+  // A second part, so demo mode shows a bus with more than one thing on it and
+  // the scan has something to match against two catalogue entries.
+  chip.attach(new VirtualAht10());
   // A slowly wandering analog signal so the ADC readouts are not flatlined.
   const started = Date.now();
   const tick = () => {
