@@ -31,6 +31,8 @@ const CMD_I2C_WRITE_NOSTOP = 0x94;
 const STATE_IDLE = 0x00;
 const STATE_ADDR_NACK = 0x25;
 const STATE_WRITING_NO_STOP = 0x45;
+/** Trying to issue a STOP. Sticks here when a device is holding the bus. */
+const STATE_STOP = 0x60;
 
 // Status byte 20 flags, and Get-I2C-Data result codes.
 const FLAG_ADDR_NACK = 0x40;
@@ -110,6 +112,8 @@ export class Mcp2221Emulator {
   /** Test hook: every address a write command targets, and its payload length. */
   onProbe: ((address: number, length: number) => void) | null = null;
   #cancelPending = 0;
+  #wedged = false;
+  #linesLow = false;
   #i2cState = STATE_IDLE;
   #addrNacked = false;
   #write: PendingWrite | null = null;
@@ -242,8 +246,10 @@ export class Mcp2221Emulator {
     reply[16] = (this.#write?.address ?? 0) << 1;
     reply[20] = this.#addrNacked ? FLAG_ADDR_NACK : 0x00;
     reply[21] = 0x01; // I2C engine initialised
-    reply[22] = 1; // SCL idles high
-    reply[23] = 1; // SDA idles high
+    // Both high is a free bus. A device holding either one low is the case a
+    // chip reset cannot fix, and the reason webblinka reports the levels.
+    reply[22] = this.#linesLow ? 0 : 1; // SCL
+    reply[23] = this.#linesLow ? 0 : 1; // SDA
     reply[24] = this.#interruptDetected ? 1 : 0;
 
     // Hardware and firmware revision, four ASCII bytes.
@@ -489,6 +495,7 @@ export class Mcp2221Emulator {
   /** The engine has finished cancelling: bus released, transfers abandoned. */
   #settle(): void {
     this.#cancelPending = 0;
+    if (this.#wedged) return; // a cancel cannot reach this one
     this.#i2cState = STATE_IDLE;
     this.#write = null;
     this.#read = null;
@@ -505,6 +512,21 @@ export class Mcp2221Emulator {
     this.#write = null;
     this.#read = null;
     this.#interruptDetected = false;
+    // A reset is the one thing that clears a wedge no cancel can reach, and
+    // being able to model that is the point of having `wedge()` at all.
+    this.#cancelPending = 0;
+    this.#wedged = false;
+    this.#linesLow = false;
+  }
+
+  /**
+   * Jam the engine in a state a cancel cannot clear, the way a transfer
+   * abandoned mid-flight leaves real hardware. Only a reset gets out of it.
+   */
+  wedge(state = STATE_STOP, linesLow = false): void {
+    this.#wedged = true;
+    this.#i2cState = state;
+    this.#linesLow = linesLow;
   }
 }
 

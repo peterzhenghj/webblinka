@@ -70,6 +70,12 @@ export class EmulatorTransport implements HidTransport {
   async close(): Promise<void> {
     this.#opened = false;
   }
+
+  /** Nothing re-enumerates in software, so the handle is still good. */
+  async reacquire(): Promise<void> {
+    this.#queue.clear();
+    this.#opened = true;
+  }
 }
 
 /** The board demo mode presents: an MCP2221 with a GPS on the bus. */

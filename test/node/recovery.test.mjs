@@ -34,14 +34,18 @@ test("force_idle polls until the engine is genuinely idle", async () => {
   // Leave the engine mid-NACK, the state a scan keeps landing in.
   await assert.rejects(() => call("gps_start", 0x77));
 
-  assert.equal(await call("force_idle"), "idle");
+  const bus = await call("force_idle");
+  assert.equal(bus.idle, true);
+  assert.equal(bus.state, "idle");
   assert.equal((await call("chip_status")).i2c.stateName, "idle");
 });
 
 test("connect reports the state the engine settled into", async () => {
   const { call } = await bootStack({ chip: demoChip() });
   const board = await call("connect");
-  assert.equal(board.i2cState, "idle");
+  assert.equal(board.bus.state, "idle");
+  assert.equal(board.bus.idle, true);
+  assert.deepEqual([board.bus.scl, board.bus.sda], [1, 1]);
 });
 
 test("the scan probes only unreserved addresses, and writes nothing", async () => {

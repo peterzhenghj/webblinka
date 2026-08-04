@@ -22,12 +22,19 @@ export interface ChipStatus {
   revision: { hardware: string; firmware: string };
 }
 
+/** Where the I2C engine settled after a cancel, and what the bus lines read. */
+export interface BusState {
+  state: string;
+  idle: boolean;
+  scl: number;
+  sda: number;
+}
+
 export interface BoardInfo {
   chip: string;
   board: string;
   pins: string[];
-  /** Where the I2C engine settled after the connect-time cancel. */
-  i2cState: string;
+  bus: BusState;
 }
 
 export interface RuntimeInfo {

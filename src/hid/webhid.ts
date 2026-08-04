@@ -39,7 +39,7 @@ export async function grantedMcp2221s(): Promise<HIDDevice[]> {
 
 export class WebHidTransport implements HidTransport {
   droppedReports = 0;
-  readonly #device: HIDDevice;
+  #device: HIDDevice;
   readonly #queue = new ReportQueue();
   #listening = false;
 
@@ -49,6 +49,64 @@ export class WebHidTransport implements HidTransport {
 
   get device(): HIDDevice {
     return this.#device;
+  }
+
+  /**
+   * Wait out a reset. The chip drops off USB and comes back as a *different*
+   * HIDDevice object, so the old handle is dead however healthy it looks --
+   * everything above this class keeps its references and never finds out.
+   */
+  async reacquire(timeoutMs: number): Promise<void> {
+    const replacement = await this.#awaitReconnect(timeoutMs);
+    this.#detach();
+    this.#device = replacement;
+    await this.open(replacement.vendorId, replacement.productId);
+  }
+
+  #awaitReconnect(timeoutMs: number): Promise<HIDDevice> {
+    const matches = (device: HIDDevice) =>
+      device !== this.#device &&
+      device.vendorId === MCP2221_VENDOR_ID &&
+      device.productId === MCP2221_PRODUCT_ID;
+
+    return new Promise<HIDDevice>((resolve, reject) => {
+      const done = (device: HIDDevice) => {
+        clearInterval(poll);
+        clearTimeout(timer);
+        navigator.hid.removeEventListener("connect", onConnect);
+        resolve(device);
+      };
+      const onConnect = (event: HIDConnectionEvent) => {
+        if (matches(event.device)) done(event.device);
+      };
+      navigator.hid.addEventListener("connect", onConnect);
+
+      // The connect event is the fast path, but permission for a device with no
+      // serial number can be re-granted without one firing, so also poll.
+      const poll = setInterval(() => {
+        void navigator.hid.getDevices().then((devices) => {
+          const found = devices.find(matches);
+          if (found) done(found);
+        });
+      }, 250) as unknown as number;
+
+      const timer = setTimeout(() => {
+        clearInterval(poll);
+        navigator.hid.removeEventListener("connect", onConnect);
+        reject(
+          new Error(
+            `the MCP2221 did not come back within ${timeoutMs}ms — unplug it and plug it back in`,
+          ),
+        );
+      }, timeoutMs) as unknown as number;
+    });
+  }
+
+  #detach(): void {
+    if (this.#listening) {
+      this.#device.removeEventListener("inputreport", this.#onInputReport);
+      this.#listening = false;
+    }
   }
 
   async enumerate(): Promise<HidDeviceInfo[]> {

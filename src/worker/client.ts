@@ -40,6 +40,16 @@ export class PythonSession {
     this.#transport = transport;
   }
 
+  /**
+   * Wait for the device to come back after a reset. Python is untouched by
+   * this -- its `hid` module talks to the transport, not to a particular
+   * HIDDevice, so swapping the handle underneath is invisible to Blinka.
+   */
+  async reacquire(timeoutMs = 6000): Promise<void> {
+    if (!this.#transport) throw new Error("no HID device is connected");
+    await this.#transport.reacquire(timeoutMs);
+  }
+
   /** Start Pyodide and install the vendored wheels. Safe to await repeatedly. */
   boot(wheelUrls: string[]): Promise<void> {
     if (this.#booted) return this.#booted;

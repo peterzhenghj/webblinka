@@ -87,6 +87,20 @@ the wind-down runs long the command is rejected as busy and Blinka reads that as
 is idle instead of assuming, and the scan recovers per-address rather than
 abandoning the sweep. `Mcp2221Emulator.cancelLatency` reproduces the window.
 
+Some states no cancel can reach — a transfer abandoned mid-flight leaves the
+engine trying to issue a STOP forever, and it survives page reloads because
+webblinka does not reset the chip at startup the way Blinka does (a reset drops
+the device off USB, invalidating the page's `HIDDevice`). **Reset chip** does it
+properly: resets, waits for the re-enumerated device, swaps the handle
+underneath Python, and re-reads the chip's real pin configuration into Blinka's
+cache. `Mcp2221Emulator.wedge()` reproduces the state.
+
+Which of the two you have is decided by the SCL/SDA levels, which is why they
+are reported rather than guessed at. Both high means the bus is free and the
+chip is stuck, so a reset fixes it. Either low means a device is holding a line
+down, and resetting the MCP2221 cannot release someone else's line — that one is
+wiring or pull-ups.
+
 Scanning is not automatic on connect: it writes to every address on the bus, so
 it happens when you open the I²C tab, and again whenever you press Scan.
 

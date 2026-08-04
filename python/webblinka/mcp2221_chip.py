@@ -158,7 +158,7 @@ def chip_status() -> dict[str, Any]:
 
 
 @handler
-def force_idle(attempts: int = 8) -> str:
+def force_idle(attempts: int = 8) -> dict[str, Any]:
     """Drag the I2C engine back to idle, and report where it ended up.
 
     A cancel is a *request*: the chip answers 0x10 in byte 2 to say it has
@@ -168,19 +168,63 @@ def force_idle(attempts: int = 8) -> str:
     "Unrecoverable I2C state failure" -- the next command arrives while the
     engine is still winding down, gets rejected as busy, and the rejection is
     read as a fatal bus state. Polling until it is genuinely idle is cheap.
+
+    The SCL/SDA levels come back too, because they are what distinguishes the
+    two reasons this can fail to reach idle. Both high means the bus is free
+    and the chip itself is stuck -- a reset clears that. Either one low means a
+    device is holding the line and no amount of cancelling will help.
     """
     import time
 
-    state = -1
-    for _ in range(attempts):
+    r = []
+    for attempt in range(attempts):
         r = xfer(bytes([CMD_STATUS, 0x00, 0x10]))  # status + cancel transfer
         if r[1] != 0x00:
             raise RuntimeError(f"cancel rejected with 0x{r[1]:02x}")
-        state = r[8]
-        if state == 0x00:
-            return I2C_STATE_NAMES[0x00]
-        time.sleep(0.002)
-    return I2C_STATE_NAMES.get(state, f"unknown (0x{state:02x})")
+        if r[8] == 0x00:
+            break
+        if attempt < attempts - 1:
+            time.sleep(0.002)
+
+    state = r[8]
+    return {
+        "state": I2C_STATE_NAMES.get(state, f"unknown (0x{state:02x})"),
+        "idle": state == 0x00,
+        "scl": r[22],
+        "sda": r[23],
+    }
+
+
+@handler
+def reset_chip() -> None:
+    """Ask the chip to reset itself.
+
+    This is the only thing that clears an engine wedged somewhere a cancel
+    cannot reach. Blinka does it on every startup; webblinka does not, because
+    the chip drops off USB and re-enumerates, which invalidates the HIDDevice
+    the page is holding. The page has to notice the reconnect and re-acquire the
+    device -- see WebHidTransport.reacquire -- so this is offered as an explicit
+    recovery rather than done silently at connect.
+
+    No reply comes back: the device is already gone by then.
+    """
+    xfer(bytes([0x70, 0xAB, 0xCD, 0xEF]), response=False)
+
+
+@handler
+def resync() -> dict[str, Any]:
+    """Re-read the chip's real state into Blinka after a reset.
+
+    Blinka's MCP2221 object caches the four GP configuration bytes so it can
+    write one pin without disturbing the others. A reset returns the chip to its
+    flash defaults, which leaves that cache describing a chip that no longer
+    exists -- so the next pin change would write back stale settings for the
+    other three.
+    """
+    sram = _sram()
+    device = chip()
+    device._gp_config = [sram[22 + pin] for pin in range(4)]  # noqa: SLF001
+    return force_idle()
 
 
 @handler

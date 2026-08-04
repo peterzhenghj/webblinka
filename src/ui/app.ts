@@ -14,6 +14,7 @@ import { statusPill } from "./panel.ts";
 import {
   CommonPanel,
   type BoardInfo,
+  type BusState,
   type ChipStatus,
   type RuntimeInfo,
 } from "./panels/common.ts";
@@ -121,6 +122,13 @@ export function mount(root: HTMLElement): void {
 
   const connect = el("button", { class: "primary", text: "Connect MCP2221" });
   const demo = el("button", { text: "Run the demo instead" });
+  const reset = el("button", {
+    text: "Reset chip",
+    hidden: true,
+    title:
+      "Resets the MCP2221. Clears an I²C engine stuck somewhere a cancel cannot " +
+      "reach — the software equivalent of unplugging it.",
+  });
   const intro = el("div", { class: "body" }, [
     el("p", {
       class: "hint",
@@ -129,7 +137,7 @@ export function mount(root: HTMLElement): void {
         "CircuitPython libraries run unmodified in a Python runtime inside this " +
         "page and talk to the chip over WebHID — no server, no install.",
     }),
-    el("div", { class: "controls" }, [connect, demo]),
+    el("div", { class: "controls" }, [connect, demo, reset]),
   ]);
 
   root.replaceChildren(
@@ -147,7 +155,20 @@ export function mount(root: HTMLElement): void {
     log.root,
   );
 
-  const ui: Ui = { connect, demo, status, log, tabs, common, gpio, i2c, console: console_ };
+  const ui: Ui = {
+    connect,
+    demo,
+    reset,
+    status,
+    log,
+    tabs,
+    common,
+    gpio,
+    i2c,
+    console: console_,
+  };
+
+  reset.addEventListener("click", () => void resetChip(session, ui));
 
   session.on("status", (phase) => status.set(`${BOOT_PHASE_LABELS[phase]}…`, "busy"));
   session.on("log", (stream, text) => log.write(text, stream));
@@ -177,6 +198,7 @@ export function mount(root: HTMLElement): void {
 interface Ui {
   connect: HTMLButtonElement;
   demo: HTMLButtonElement;
+  reset: HTMLButtonElement;
   status: ReturnType<typeof statusPill>;
   log: LogPanel;
   tabs: Tabs;
@@ -218,20 +240,61 @@ async function start(
     await ui.gpio.enable();
     await ui.console.enable();
     ui.tabs.enable();
+    ui.reset.hidden = false;
     ui.status.set(`Connected — ${label}`, "ok");
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
-    if (board.i2cState !== "idle") {
-      ui.log.write(
-        `I²C engine came up in "${board.i2cState}" rather than idle. Something on ` +
-          `the bus may be holding SDA low.`,
-        "stderr",
-      );
-    }
+    reportBusState(ui, board.bus);
   } catch (err) {
     ui.status.set("Failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");
     ui.connect.disabled = false;
     ui.demo.disabled = false;
+  }
+}
+
+/**
+ * Say what the bus is actually doing rather than guessing at it. The two lines
+ * separate the two causes: both high and the bus is free, so the chip itself is
+ * stuck and a reset fixes it; either low and a device is holding the line, which
+ * no amount of resetting the MCP2221 will change.
+ */
+function reportBusState(ui: Ui, bus: BusState): void {
+  if (bus.idle) return;
+  const lines = `SCL ${bus.scl ? "high" : "low"}, SDA ${bus.sda ? "high" : "low"}`;
+  const held = !bus.scl || !bus.sda;
+  ui.log.write(
+    `I²C engine is stuck in "${bus.state}" and would not cancel (${lines}). ` +
+      (held
+        ? "A device on the bus is holding a line low. Check wiring and pull-ups; " +
+          "resetting the MCP2221 will not release someone else's line."
+        : "The bus itself is free, so this is the chip rather than the wiring — " +
+          "press Reset chip."),
+    "stderr",
+  );
+}
+
+async function resetChip(session: PythonSession, ui: Ui): Promise<void> {
+  ui.reset.disabled = true;
+  // Nothing may talk to the device while it is away.
+  ui.common.stop();
+  ui.gpio.hide();
+  ui.status.set("Resetting…", "busy");
+  ui.log.write("Resetting the chip; it will drop off USB and re-enumerate.");
+  try {
+    // The reply never comes -- the device is gone before it could send one --
+    // and the send itself may fail for the same reason. Both are success here.
+    await session.call("reset_chip").catch(() => undefined);
+    await session.reacquire();
+    const bus = await session.call<BusState>("rebuild_bus");
+    await ui.gpio.enable(); // a reset put every pin back to its flash default
+    ui.status.set("Connected", "ok");
+    ui.log.write(`Chip is back, I²C engine ${bus.state}.`);
+    reportBusState(ui, bus);
+  } catch (err) {
+    ui.status.set("Reset failed", "error");
+    ui.log.write(err instanceof Error ? err.message : String(err), "stderr");
+  } finally {
+    ui.reset.disabled = false;
   }
 }
 

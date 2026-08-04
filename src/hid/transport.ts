@@ -23,6 +23,11 @@ export interface HidTransport {
   read(length: number, timeoutMs: number): Promise<Report>;
   close(): Promise<void>;
   /**
+   * Wait for the device to come back after a reset re-enumerated it, and take
+   * hold of the new handle. Resolves once it is open and usable again.
+   */
+  reacquire(timeoutMs: number): Promise<void>;
+  /**
    * Replies discarded because they were still unread when the next command went
    * out. Should always be zero; anything else means two command streams crossed.
    */

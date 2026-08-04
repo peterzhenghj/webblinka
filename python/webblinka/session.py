@@ -44,7 +44,7 @@ def connect() -> dict[str, Any]:
     # re-enumerates the USB device and would invalidate the page's HIDDevice, so
     # cancel the transfer instead -- same effect, device stays put. Poll until
     # the engine is actually idle rather than assuming one cancel took.
-    state = mcp2221_chip.force_idle()
+    bus_state = mcp2221_chip.force_idle()
 
     # The clock divider is only accepted while the engine is idle, so this has
     # to come after the cancel.
@@ -54,8 +54,23 @@ def connect() -> dict[str, Any]:
         "chip": chip_id,
         "board": board_id,
         "pins": [name for name in ("G0", "G1", "G2", "G3") if hasattr(board, name)],
-        "i2cState": state,
+        "bus": bus_state,
     }
+
+
+@handler
+def rebuild_bus() -> dict[str, Any]:
+    """Take the bus again after the chip has been reset out from under us."""
+    global _i2c
+    import board
+    import busio
+
+    from . import mcp2221_chip
+
+    bus_state = mcp2221_chip.resync()
+    _pins.clear()  # a reset returned every pin to its flash default
+    _i2c = busio.I2C(board.SCL, board.SDA)
+    return bus_state
 
 
 # The I2C spec reserves 0x00-0x07 and 0x78-0x7f. i2cdetect skips them and so do
