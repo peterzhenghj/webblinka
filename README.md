@@ -133,6 +133,13 @@ it happens when you open the I²C tab, and again whenever you press Scan.
 
 ## Demo mode
 
+Marked everywhere it appears — a banner, a `· simulated` suffix on every panel
+heading, and a status pill that says Demo rather than Connected. The readings
+are indistinguishable from real ones by construction, which is the point of the
+emulator and also its hazard: an invented GPS fix reads exactly like a receiver
+reporting the wrong place.
+
+
 No adapter? [`src/hid/mcp2221-emulator.ts`](src/hid/mcp2221-emulator.ts) is a
 software MCP2221 speaking the same HID command protocol, with a synthetic
 PA1010D GPS on its I2C bus that acquires a fix over the first few seconds. The

@@ -140,6 +140,20 @@ export function mount(root: HTMLElement): void {
     el("div", { class: "controls" }, [connect, demo, reset]),
   ]);
 
+  // Demo mode presents an interface identical to the real one, so every reading
+  // it produces has to be labelled as invented. Otherwise a simulated GPS fix
+  // simply looks like a receiver reporting the wrong place, and the person
+  // reading it goes looking for a fault in their hardware.
+  const demoBanner = el("div", { class: "demo-banner", hidden: true }, [
+    el("strong", { text: "Demo mode" }),
+    el("span", {
+      text:
+        " — no hardware is connected. Every reading below is generated in " +
+        "software, including the GPS position, which is a fixed point in San " +
+        "Francisco. Press Connect MCP2221 to use a real device.",
+    }),
+  ]);
+
   root.replaceChildren(
     el("div", { class: "masthead" }, [
       el("div", {}, [
@@ -147,6 +161,7 @@ export function mount(root: HTMLElement): void {
         el("p", { text: "CircuitPython drivers, in the browser, driving real I2C hardware." }),
       ]),
     ]),
+    demoBanner,
     el("section", { class: "panel" }, [
       el("header", {}, [el("h2", { text: "Connection" }), status.node]),
       intro,
@@ -166,6 +181,7 @@ export function mount(root: HTMLElement): void {
     gpio,
     i2c,
     console: console_,
+    demoMode: false,
   };
 
   reset.addEventListener("click", () => void resetChip(session, ui));
@@ -174,8 +190,14 @@ export function mount(root: HTMLElement): void {
   session.on("log", (stream, text) => log.write(text, stream));
 
   demo.addEventListener("click", () => {
-    log.write("Starting in demo mode: emulated MCP2221 with a PA1010D on the bus.");
-    void start(session, ui, new EmulatorTransport(), "emulated MCP2221");
+    ui.demoMode = true;
+    root.dataset.demo = "true";
+    demoBanner.hidden = false;
+    log.write(
+      "Starting in demo mode: emulated MCP2221 with a simulated PA1010D. " +
+        "All readings from here are software-generated, not measurements.",
+    );
+    void start(session, ui, new EmulatorTransport(), "simulated device");
   });
 
   const blocker = unsupportedReason();
@@ -206,6 +228,8 @@ interface Ui {
   gpio: GpioPanel;
   i2c: I2cPanel;
   console: ConsolePanel;
+  /** Readings are software-generated, and every one of them must say so. */
+  demoMode: boolean;
 }
 
 async function connectHardware(session: PythonSession, ui: Ui): Promise<void> {
@@ -241,7 +265,9 @@ async function start(
     await ui.console.enable();
     ui.tabs.enable();
     ui.reset.hidden = false;
-    ui.status.set(`Connected — ${label}`, "ok");
+    // "Demo" rather than "Connected": nothing is connected, and the pill is the
+    // one thing on screen in every tab.
+    ui.status.set(ui.demoMode ? `Demo — ${label}` : `Connected — ${label}`, ui.demoMode ? "busy" : "ok");
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
     reportBusState(ui, session, board.bus);
   } catch (err) {

@@ -154,6 +154,34 @@ body {
   margin-top: 1.25rem;
 }
 
+/* -------------------------------------------------------------- demo mode */
+
+/* Simulated readings render in an interface identical to the real one, so the
+   labelling has to be impossible to scroll past -- a small status pill was not
+   enough, and someone reasonably read an invented GPS fix as their receiver
+   being thirty miles wrong. */
+
+.demo-banner {
+  margin-top: 1.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--warn);
+  border-left-width: 3px;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.demo-banner strong {
+  color: var(--warn);
+}
+
+/* Every panel says so too, including any added later. */
+[data-demo="true"] .panel > header h2::after {
+  content: " · simulated";
+  color: var(--warn);
+  font-weight: 400;
+}
+
 /* ------------------------------------------------------------------ panels */
 
 .panel {
