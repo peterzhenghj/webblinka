@@ -110,15 +110,16 @@ export class GpsPanel implements DevicePanel {
 
     this.#body.append(
       this.#progress,
-      // Above the sky view: once there is a fix, where it is landing is the
-      // thing you want, and the satellites become the explanation for it.
-      this.#map.root,
+      // The scatter sits beside the readings it is a picture of: the numbers
+      // say where, the plot says how much to believe them, and reading one
+      // against the other is the point. It collapses under the table when
+      // there is no room for two columns, and vanishes entirely before a fix.
+      el("div", { class: "gps-columns" }, [facts, this.#map.root]),
       el("div", { class: "sky-block" }, [
         el("h3", { class: "subhead", text: "Satellites in view" }),
         this.#sky,
         this.#skyNote,
       ]),
-      facts,
       this.#raw,
     );
   }

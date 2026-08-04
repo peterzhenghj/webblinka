@@ -158,14 +158,21 @@ export class GpsMap {
       ]),
     );
 
+    // Terse: this sits in a narrow column beside the readings, and a paragraph
+    // here would be taller than the plot it describes. The reasoning lives in
+    // the tooltip for anyone who wants it.
     const spread = rms(points);
-    this.#caption.textContent =
-      `${span.toFixed(0)} m across, rings at ${(span / 4).toFixed(1)} m and ` +
-      `${(span / 2).toFixed(1)} m. ${this.#history.length} ` +
-      `${this.#history.length === 1 ? "fix" : "fixes"}, ${spread.toFixed(1)} m RMS from the mean` +
-      (estimate > 0 ? `. Shaded circle is HDOP ${hdop?.toFixed(1)} as a rough ` +
-        `±${estimate.toFixed(0)} m — compare it against the scatter you can see` : "") +
-      ". Centred on the mean position, not on any one fix.";
+    const lines = [
+      `${span.toFixed(0)} m across · rings ${(span / 4).toFixed(1)}, ${(span / 2).toFixed(1)} m`,
+      `${this.#history.length} ${this.#history.length === 1 ? "fix" : "fixes"} · ` +
+        `${spread.toFixed(1)} m RMS`,
+    ];
+    if (estimate > 0) lines.push(`HDOP ${hdop?.toFixed(1)} ≈ ±${estimate.toFixed(0)} m (shaded)`);
+    this.#caption.textContent = lines.join("\n");
+    this.#caption.title =
+      "Centred on the mean of the fixes so far, not on the latest one. The " +
+      "shaded circle is the error HDOP implies; the dots are the error actually " +
+      "observed. Comparing the two is the point.";
   }
 }
 

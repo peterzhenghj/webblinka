@@ -536,8 +536,29 @@ select {
 
 /* --------------------------------------------------------- gps scatter plot */
 
+/* Readings left, scatter right. The second track is a definite width rather
+   than auto: auto sizes to max-content, the caption is a sentence, and a
+   sentence's max-content width is the whole sentence -- which starved the table
+   to zero and left its rows overflowing across the plot. */
+.gps-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 36rem) {
+  .gps-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .gps-map {
-  margin: 1.25rem 0;
+  margin: 0;
+}
+
+.gps-map .subhead {
+  margin-top: 0;
 }
 
 .gps-plot {
@@ -589,6 +610,11 @@ select {
 
 .gps-map .hint {
   margin: 0.5rem 0 0;
+  /* The caption is newline-separated so each figure gets its own line in a
+     column this narrow, rather than wrapping wherever it happens to run out. */
+  white-space: pre-line;
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .gps-map a {
