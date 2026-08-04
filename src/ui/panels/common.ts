@@ -52,6 +52,7 @@ export class CommonPanel {
   readonly #board: HTMLElement;
   readonly #values = new Map<string, HTMLElement>();
   #timer: number | null = null;
+  #polling = false;
 
   constructor(handlers: CommonHandlers) {
     this.#handlers = handlers;
@@ -140,11 +141,18 @@ export class CommonPanel {
   }
 
   async #poll(): Promise<void> {
+    // Calls to Python are serialised, so a slow operation elsewhere -- a bus
+    // scan, a driver read -- delays this one. Skipping the tick keeps a backlog
+    // of stale polls from queueing up behind it.
+    if (this.#polling) return;
+    this.#polling = true;
     let status: ChipStatus;
     try {
       status = await this.#handlers.status();
     } catch {
       return; // a transient bus error should not stop the timer
+    } finally {
+      this.#polling = false;
     }
 
     this.#set("adc.ch0", `${status.adc.ch0} · ${volts(status.adc.ch0)}`);

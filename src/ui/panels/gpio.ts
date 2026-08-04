@@ -76,6 +76,7 @@ export class GpioPanel {
   readonly #rows = new Map<string, PinRow>();
   #timer: number | null = null;
   #visible = false;
+  #polling = false;
 
   constructor(handlers: GpioHandlers) {
     this.#handlers = handlers;
@@ -129,12 +130,17 @@ export class GpioPanel {
   }
 
   async #poll(): Promise<void> {
+    // Skip rather than queue behind whatever else is using the serialised bus.
+    if (this.#polling) return;
+    this.#polling = true;
     try {
       for (const state of await this.#handlers.readAll()) {
         this.#rows.get(state.name)?.show(state);
       }
     } catch {
       // Transient bus errors are expected; the next tick retries.
+    } finally {
+      this.#polling = false;
     }
   }
 

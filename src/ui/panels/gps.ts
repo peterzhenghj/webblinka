@@ -37,6 +37,7 @@ export class GpsPanel {
   readonly #hint: HTMLElement;
   #timer: number | null = null;
   #running = false;
+  #polling = false;
 
   constructor(handlers: GpsHandlers) {
     this.#handlers = handlers;
@@ -107,12 +108,17 @@ export class GpsPanel {
   }
 
   async #poll(): Promise<void> {
+    // Skip rather than queue behind whatever else is using the serialised bus.
+    if (this.#polling) return;
+    this.#polling = true;
     let state: GpsState;
     try {
       state = await this.#handlers.poll();
     } catch (err) {
       this.#status.set(err instanceof Error ? err.message : String(err), "error");
       return;
+    } finally {
+      this.#polling = false;
     }
 
     this.#status.set(

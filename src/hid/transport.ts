@@ -22,6 +22,11 @@ export interface HidTransport {
   /** Resolves with the next input report, or rejects on timeout. */
   read(length: number, timeoutMs: number): Promise<Report>;
   close(): Promise<void>;
+  /**
+   * Replies discarded because they were still unread when the next command went
+   * out. Should always be zero; anything else means two command streams crossed.
+   */
+  readonly droppedReports: number;
 }
 
 /** The subset of hidapi's device dict that Blinka and PlatformDetect read. */
@@ -81,7 +86,9 @@ export class ReportQueue {
   }
 
   /** Drop buffered reports so a stale reply can't be mistaken for a fresh one. */
-  clear(): void {
+  clear(): number {
+    const dropped = this.#reports.length;
     this.#reports.length = 0;
+    return dropped;
   }
 }

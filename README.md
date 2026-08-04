@@ -40,6 +40,14 @@ stays on the main thread because `requestDevice()` needs a user gesture, so each
 64-byte report round-trips over `postMessage` — invisible to Blinka thanks to
 JSPI.
 
+**Calls into Python are serialised** ([`serialize.ts`](src/worker/serialize.ts)).
+The chip has one command pipeline and one I²C engine, and a suspended JSPI stack
+lets the worker start a second call while the first is mid-transfer — so two
+overlapping calls interleave on that one pipeline and read each other's replies.
+The unit of atomicity is a whole driver operation, not a transfer, so the queue
+lives at the call boundary. Panels that poll skip a tick rather than queue behind
+a slow operation.
+
 **Requirements: Chrome or Edge 137+ on desktop.** WebHID is Chromium-only and
 JSPI shipped in 137. The site says so plainly if either is missing.
 

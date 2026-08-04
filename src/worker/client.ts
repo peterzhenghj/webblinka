@@ -20,6 +20,7 @@ export class PythonSession {
     log: new Set(),
   };
   #transport: HidTransport | null = null;
+  #seenDropped = 0;
   #nextId = 1;
   #booted: Promise<void> | null = null;
   #resolveBoot: (() => void) | null = null;
@@ -96,6 +97,7 @@ export class PythonSession {
   async #serveHid(id: number, request: HidRequest): Promise<void> {
     try {
       const value = await this.#runHid(request);
+      this.#reportDesync();
       const transfer = value instanceof Uint8Array ? [value.buffer] : [];
       this.#worker.postMessage(
         { kind: "hidReply", id, ok: true, value } satisfies ToWorker,
@@ -108,6 +110,26 @@ export class PythonSession {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       } satisfies ToWorker);
+    }
+  }
+
+  /**
+   * The transport drops any reply still unread when the next command goes out.
+   * With calls serialised that should never happen, so if it does, say so --
+   * a silent resynchronisation would leave the next confusing bus error with no
+   * explanation attached to it.
+   */
+  #reportDesync(): void {
+    const dropped = this.#transport?.droppedReports ?? 0;
+    if (dropped <= this.#seenDropped) return;
+    const added = dropped - this.#seenDropped;
+    this.#seenDropped = dropped;
+    for (const fn of this.#listeners.log) {
+      fn(
+        "stderr",
+        `Discarded ${added} orphaned HID ${added === 1 ? "reply" : "replies"} — ` +
+          `two command streams crossed on the bus. Please report this.`,
+      );
     }
   }
 

@@ -2,6 +2,7 @@
 import type { Report } from "../hid/transport.ts";
 import { PY_ROOT, bootstrapSource } from "./bootstrap.ts";
 import type { FromWorker, HidRequest, HidResponse, ToWorker } from "./protocol.ts";
+import { Serializer } from "./serialize.ts";
 
 /**
  * Pyodide lives here, off the main thread, so a runaway driver loop can never
@@ -68,6 +69,7 @@ Object.assign(globalThis, {
 // --------------------------------------------------------------------- boot
 
 let dispatch: PyProxyLike | null = null;
+const calls = new Serializer();
 
 async function boot(pyodideIndexUrl: string, wheelUrls: string[]): Promise<void> {
   post({ kind: "status", phase: "loading-runtime" });
@@ -116,9 +118,13 @@ async function call(id: number, fn: string, args: unknown[]): Promise<void> {
     return;
   }
   try {
-    // callPromising enables stack switching, which is what lets the Python
-    // underneath use run_sync to block on a HID round-trip.
-    const json = (await dispatch.callPromising(fn, JSON.stringify(args))) as string;
+    // One call at a time: see src/worker/serialize.ts for why overlapping them
+    // corrupts the chip's single command pipeline.
+    const json = await calls.run(async () => {
+      // callPromising enables stack switching, which is what lets the Python
+      // underneath use run_sync to block on a HID round-trip.
+      return (await dispatch!.callPromising(fn, JSON.stringify(args))) as string;
+    });
     post({ kind: "reply", id, ok: true, value: JSON.parse(json) });
   } catch (err) {
     post({ kind: "reply", id, ok: false, error: describe(err) });

@@ -13,17 +13,23 @@ import { EmulatorTransport } from "../../../src/hid/emulator.ts";
 import { Mcp2221Emulator } from "../../../src/hid/mcp2221-emulator.ts";
 import { VirtualPa1010d } from "../../../src/hid/devices/pa1010d.ts";
 import { PY_ROOT, bootstrapSource } from "../../../src/worker/bootstrap.ts";
+import { Serializer } from "../../../src/worker/serialize.ts";
 
 const ROOT = new URL("../../../", import.meta.url);
 const WHEELS = new URL("public/wheels/", ROOT);
 const PYTHON = new URL("python/", ROOT);
 
 /**
- * @param {{ chip?: Mcp2221Emulator, transport?: EmulatorTransport }} [options]
+ * @param {{
+ *   chip?: Mcp2221Emulator,
+ *   transport?: EmulatorTransport,
+ *   transferDelayMs?: number,
+ * }} [options]
  */
 export async function bootStack(options = {}) {
   const chip = options.chip ?? new Mcp2221Emulator();
-  const transport = options.transport ?? new EmulatorTransport(chip);
+  const transport =
+    options.transport ?? new EmulatorTransport(chip, options.transferDelayMs ?? 0);
 
   const py = await loadPyodide();
   installBridge(transport);
@@ -32,11 +38,14 @@ export async function bootStack(options = {}) {
   await py.runPythonAsync(bootstrapSource());
 
   const rpc = py.pyimport("webblinka.rpc");
+  // The same Serializer the worker uses, so concurrent calls in a test hit the
+  // real queueing rather than a test-only approximation of it.
+  const calls = new Serializer();
   /** Invoke a @handler exactly the way src/worker/pyworker.ts does. */
   const call = async (fn, ...args) =>
-    JSON.parse(await rpc.dispatch.callPromising(fn, JSON.stringify(args)));
+    JSON.parse(await calls.run(() => rpc.dispatch.callPromising(fn, JSON.stringify(args))));
 
-  return { py, chip, transport, call };
+  return { py, chip, transport, call, calls };
 }
 
 /** Build the demo rig without EmulatorTransport's setInterval keeping Node alive. */

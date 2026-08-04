@@ -9,12 +9,21 @@ import { ReportQueue, type HidDeviceInfo, type HidTransport, type Report } from 
  * can tell the difference.
  */
 export class EmulatorTransport implements HidTransport {
+  droppedReports = 0;
   readonly chip: Mcp2221Emulator;
   readonly #queue = new ReportQueue();
+  readonly #transferDelayMs: number;
   #opened = false;
 
-  constructor(chip = defaultRig()) {
+  /**
+   * @param transferDelayMs Latency to add to each transfer. Zero keeps demo mode
+   *   snappy, but real USB costs about a millisecond per report -- enough to
+   *   turn timing bugs that are invisible here into certainties on hardware, so
+   *   tests set it deliberately.
+   */
+  constructor(chip = defaultRig(), transferDelayMs = 0) {
     this.chip = chip;
+    this.#transferDelayMs = transferDelayMs;
   }
 
   async enumerate(): Promise<HidDeviceInfo[]> {
@@ -37,6 +46,10 @@ export class EmulatorTransport implements HidTransport {
 
   async write(data: Report): Promise<number> {
     if (!this.#opened) throw new Error("emulated device is not open");
+    // Anything unread when a new command goes out is an orphaned reply; see the
+    // matching comment in WebHidTransport.write.
+    this.droppedReports += this.#queue.clear();
+    await this.#delay();
     // Byte 0 is the hidapi report ID; the chip only sees the 64-byte report.
     const reply = this.chip.handle(data.subarray(1));
     if (reply) this.#queue.push(reply as Report);
@@ -45,7 +58,13 @@ export class EmulatorTransport implements HidTransport {
 
   async read(_length: number, timeoutMs: number): Promise<Report> {
     if (!this.#opened) throw new Error("emulated device is not open");
+    await this.#delay();
     return this.#queue.take(timeoutMs);
+  }
+
+  #delay(): Promise<void> {
+    if (this.#transferDelayMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, this.#transferDelayMs));
   }
 
   async close(): Promise<void> {

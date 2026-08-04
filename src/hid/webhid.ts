@@ -38,6 +38,7 @@ export async function grantedMcp2221s(): Promise<HIDDevice[]> {
 }
 
 export class WebHidTransport implements HidTransport {
+  droppedReports = 0;
   readonly #device: HIDDevice;
   readonly #queue = new ReportQueue();
   #listening = false;
@@ -84,6 +85,13 @@ export class WebHidTransport implements HidTransport {
 
   async write(data: Report): Promise<number> {
     if (!this.#device.opened) throw new HidNotOpenError();
+    // Every input report this chip sends answers a command, so anything still
+    // queued when the next command goes out is orphaned -- and leaving it there
+    // would shift every subsequent reply by one. Dropping it resynchronises.
+    // With calls serialised this should never fire; the counter is how we find
+    // out if it does.
+    this.droppedReports += this.#queue.clear();
+
     // hidapi convention: byte 0 is the report ID, the rest is the report.
     const reportId = data[0] ?? 0;
     await this.#device.sendReport(reportId, data.subarray(1));
