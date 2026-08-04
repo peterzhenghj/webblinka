@@ -37,6 +37,14 @@ function hasJspi(): boolean {
   return typeof WebAssembly.Suspending === "function";
 }
 
+/**
+ * Opens in a new tab: leaving this one drops the WebHID grant and throws away a
+ * Python runtime that took several seconds to boot.
+ */
+function link(href: string, text: string): HTMLAnchorElement {
+  return el("a", { href, text, target: "_blank", rel: "noreferrer noopener" });
+}
+
 export function mount(root: HTMLElement): void {
   const session = new PythonSession();
   const status = statusPill("Disconnected");
@@ -143,12 +151,18 @@ export function mount(root: HTMLElement): void {
   const intro = el("div", { class: "intro" }, [
     el("p", {
       text:
-        "Plug in an MCP2221 or MCP2221A and grant access. Adafruit's Blinka and " +
+        "Plug in an MCP2221 or MCP2221A, click connect and grant access. Adafruit's Blinka and " +
         "CircuitPython libraries run unmodified in a Python runtime inside this " +
         "page and talk to the chip over WebHID — no server, no install.",
     }),
+    el("p", {}, [
+    ]),
     el("p", { class: "aside" }, [
-      el("span", { text: "No adapter to hand? You can " }),
+      el("span", { text: "Don't have one? Adafruit sells the " }),
+      link("https://www.adafruit.com/product/4471", "MCP2221A Breakout"),
+      el("span", { text: ", and Microchip the " }),
+      link("https://www.microchip.com/en-us/development-tool/bb62z76a", "MCP2221A USB-C Breakout Board"),
+      el("span", { text: ". Or you can " }),
       demo,
       el("span", { text: " — everything works, but the readings are invented." }),
     ]),

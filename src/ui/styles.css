@@ -324,6 +324,14 @@ button.linklike:hover:not(:disabled) {
   font-size: 0.85rem;
 }
 
+.intro a {
+  color: var(--accent);
+}
+
+.intro a:hover {
+  color: var(--text);
+}
+
 select {
   font: inherit;
   font-size: 0.85rem;
