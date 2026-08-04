@@ -99,12 +99,6 @@ export class DescriptorsPanel {
         el("dt", { text: "Default LEDs" }),
         el("dd", { text: defaults(usb.chip) }),
       ]),
-      el("p", {
-        class: "hint",
-        text:
-          "Read-only. Writing these settings can change the VID/PID or lock the " +
-          "chip behind a password, which would put it out of this page's reach.",
-      }),
     );
   }
 }

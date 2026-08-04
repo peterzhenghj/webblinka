@@ -339,6 +339,41 @@ select {
   white-space: nowrap;
 }
 
+/* -------------------------------------------------------------- pin table */
+
+.pins {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.pins th[scope="row"] {
+  font-family: var(--mono);
+  font-weight: 500;
+  text-align: left;
+  padding: 0.3rem 1rem 0.3rem 0;
+}
+
+.pins td {
+  padding: 0.3rem 0.75rem 0.3rem 0;
+}
+
+/* One width for every designation menu, so the column does not jump about as
+   pins are switched between "Digital in" and "USBCFG (USB configured)". */
+.pins select {
+  width: 24ch;
+}
+
+.pin-control {
+  width: 100%;
+}
+
+.pin-value {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------- chip-wide settings */
 
 .settings-group {
@@ -375,6 +410,88 @@ select {
   gap: 0.5rem;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- GPS sky */
+
+.subhead {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.gps-progress {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+.sky-block {
+  margin-bottom: 1.25rem;
+}
+
+/* Signal bars, tallest first. Scrolls rather than squeezing: a satellite you
+   cannot read the number on is not telling you anything. */
+.sky {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.sat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  width: 2.4rem;
+}
+
+.sat-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 4rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.sat-bar {
+  width: 100%;
+  background: var(--line-strong);
+  border-radius: 1px;
+  transition: height 0.4s ease-out;
+}
+
+/* Heard, but not yet strong enough to be worth much. */
+.sat[data-state="weak"] .sat-bar {
+  background: var(--line-strong);
+}
+/* Strong enough to use, but not in the current solution. */
+.sat[data-state="usable"] .sat-bar {
+  background: var(--warn);
+}
+/* Actually contributing to the fix. */
+.sat[data-state="used"] .sat-bar {
+  background: var(--accent);
+}
+
+.sat-snr,
+.sat-prn {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.sat[data-state="used"] .sat-prn {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* --------------------------------------------------------------- log panel */

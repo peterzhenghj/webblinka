@@ -20,6 +20,16 @@ export interface Pa1010dOptions {
   altitude?: number;
   /** How long to report "no fix" for. Tests pass 0 to skip the wait. */
   acquireMs?: number;
+  /**
+   * Restart the cold start when the host first configures the module.
+   *
+   * A real receiver begins acquiring at power-on, which for demo mode means the
+   * fix has long since landed by the time Pyodide has finished booting and
+   * someone presses Start -- so the acquisition, and the whole sky view filling
+   * up, is over before anyone can see it. Demo mode turns this on so the
+   * interesting part actually happens on screen.
+   */
+  acquireFromFirstCommand?: boolean;
   now?: () => number;
 }
 
@@ -32,10 +42,12 @@ export class VirtualPa1010d implements VirtualI2cDevice {
   readonly #altitude: number;
   readonly #acquireMs: number;
   readonly #now: () => number;
-  readonly #start: number;
+  readonly #acquireFromFirstCommand: boolean;
+  #start: number;
   #outbox: number[] = [];
   #inbox = "";
   #lastSentence = 0;
+  #sentenceCount = 0;
   /** PMTK commands the host has sent us, kept for tests and the demo log. */
   readonly commands: string[] = [];
 
@@ -45,6 +57,7 @@ export class VirtualPa1010d implements VirtualI2cDevice {
     this.#longitude = options.longitude ?? -122.4194;
     this.#altitude = options.altitude ?? 16.4;
     this.#acquireMs = options.acquireMs ?? DEFAULT_ACQUIRE_MS;
+    this.#acquireFromFirstCommand = options.acquireFromFirstCommand ?? false;
     this.#now = options.now ?? (() => Date.now());
     this.#start = this.#now();
   }
@@ -60,7 +73,14 @@ export class VirtualPa1010d implements VirtualI2cDevice {
       this.#inbox = this.#inbox.slice(newline + 1);
       // Configuration is accepted and ignored: the emulated module always emits
       // the same GGA/RMC/GSA mix, which is what the panel parses.
-      if (line.startsWith("$PMTK")) this.commands.push(line);
+      if (line.startsWith("$PMTK")) {
+        if (this.#acquireFromFirstCommand && this.commands.length === 0) {
+          this.#start = this.#now();
+          this.#lastSentence = 0;
+          this.#sentenceCount = 0;
+        }
+        this.commands.push(line);
+      }
       newline = this.#inbox.indexOf("\n");
     }
   }
@@ -94,8 +114,12 @@ export class VirtualPa1010d implements VirtualI2cDevice {
 
     const elapsed = this.elapsedMs;
     const fix = elapsed >= this.#acquireMs;
-    // Climb from 0 to 11 satellites over the acquisition window, then hold.
-    const satellites = fix ? Math.min(11, 4 + Math.floor((elapsed - this.#acquireMs) / 1500)) : 0;
+    // The sky view is the source of truth, and everything else is derived from
+    // it: GGA's satellite count and GSA's PRN list have to agree with the
+    // satellites GSV says are actually up there, or the panel shows a solution
+    // built from more satellites than it can hear.
+    const sky = this.#skyView(elapsed, fix);
+    const used = sky.filter((sat) => sat.used);
     const hdop = fix ? Math.max(0.8, 3.2 - (elapsed - this.#acquireMs) / 4000) : 99.99;
 
     // A slow circular wander of a few metres, so the readout is visibly live.
@@ -104,14 +128,59 @@ export class VirtualPa1010d implements VirtualI2cDevice {
     const longitude = this.#longitude + Math.cos(drift) * 0.00005;
 
     const clock = new Date(this.#start + elapsed);
-    for (const sentence of [
-      gga(clock, latitude, longitude, fix, satellites, hdop, this.#altitude),
+    const sentences = [
+      gga(clock, latitude, longitude, fix, used.length, hdop, this.#altitude),
       rmc(clock, latitude, longitude, fix),
-      gsa(fix, satellites, hdop),
-    ]) {
+      gsa(fix, used, hdop),
+    ];
+    // GSV is bulky, so the real module is asked for it every fifth fix rather
+    // than every one. Matching that here keeps demo mode honest about how often
+    // the sky view actually refreshes.
+    if (this.#sentenceCount % 5 === 0) sentences.push(...gsv(sky));
+    this.#sentenceCount++;
+
+    for (const sentence of sentences) {
       for (const code of sentence) this.#outbox.push(code);
     }
   }
+
+  /**
+   * Satellites the receiver can hear, which is the interesting part before a
+   * fix: they appear and their signal climbs while the panel still says "no
+   * fix", which is exactly the progress a user wants to watch.
+   */
+  #skyView(elapsed: number, fix: boolean): Satellite[] {
+    let visible = Math.min(11, 1 + Math.floor(elapsed / 700));
+    // Four is the minimum for a position, so a module claiming a fix has to be
+    // hearing at least that many.
+    if (fix) visible = Math.max(visible, 4);
+
+    return Array.from({ length: visible }, (_, i) => {
+      // Each satellite starts being heard at a different moment, then its SNR
+      // ramps up and settles somewhere plausible.
+      const heardFor = Math.max(0, elapsed - i * 700);
+      let snr = Math.min(18 + ((i * 7) % 26), Math.floor(heardFor / 180));
+      if (fix && i < 4) snr = Math.max(snr, 24 + ((i * 5) % 12));
+      return {
+        prn: i + 2,
+        elevation: 15 + ((i * 23) % 70),
+        azimuth: (i * 137) % 360,
+        snr,
+        used: fix && snr >= USABLE_SNR,
+      };
+    });
+  }
+}
+
+/** Below this a satellite is heard but not worth much to a solution. */
+const USABLE_SNR = 20;
+
+interface Satellite {
+  prn: number;
+  elevation: number;
+  azimuth: number;
+  snr: number;
+  used: boolean;
 }
 
 // ------------------------------------------------------------------ sentences
@@ -141,13 +210,38 @@ function rmc(clock: Date, latitude: number, longitude: number, fix: boolean): nu
   return encode(body);
 }
 
-function gsa(fix: boolean, satellites: number, hdop: number): number[] {
-  const used = Array.from({ length: 12 }, (_, i) => (i < satellites ? String(i + 2) : "")).join(",");
+function gsa(fix: boolean, satellites: Satellite[], hdop: number): number[] {
+  // Always twelve slots, blank-padded -- that is the sentence's fixed shape.
+  const prns = Array.from({ length: 12 }, (_, i) =>
+    satellites[i] ? String(satellites[i]!.prn) : "",
+  ).join(",");
   const body =
-    `GPGSA,A,${fix ? 3 : 1},${used},` +
+    `GPGSA,A,${fix ? 3 : 1},${prns},` +
     `${fix ? (hdop + 0.9).toFixed(2) : "99.99"},${fix ? hdop.toFixed(2) : "99.99"},` +
     `${fix ? (hdop + 0.4).toFixed(2) : "99.99"}`;
   return encode(body);
+}
+
+/**
+ * GSV carries four satellites per sentence, so a full sky view is a short
+ * numbered series -- adafruit_gps stitches them back together by message index.
+ */
+function gsv(satellites: Satellite[]): number[][] {
+  const total = Math.max(1, Math.ceil(satellites.length / 4));
+  return Array.from({ length: total }, (_, message) => {
+    const slice = satellites.slice(message * 4, message * 4 + 4);
+    const fields = slice
+      .map(
+        (sat) =>
+          `${String(sat.prn).padStart(2, "0")},${String(sat.elevation).padStart(2, "0")},` +
+          `${String(sat.azimuth).padStart(3, "0")},${String(sat.snr).padStart(2, "0")}`,
+      )
+      .join(",");
+    return encode(
+      `GPGSV,${total},${message + 1},${String(satellites.length).padStart(2, "0")}` +
+        (fields ? `,${fields}` : ""),
+    );
+  });
 }
 
 /** Wrap an NMEA body in `$`, its XOR checksum, and CRLF. */

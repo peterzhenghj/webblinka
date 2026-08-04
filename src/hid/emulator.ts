@@ -81,7 +81,10 @@ export class EmulatorTransport implements HidTransport {
 /** The board demo mode presents: an MCP2221 with a GPS on the bus. */
 export function defaultRig(): Mcp2221Emulator {
   const chip = new Mcp2221Emulator();
-  chip.attach(new VirtualPa1010d());
+  // Start the cold start when the driver starts the module, not when the page
+  // built the rig -- otherwise Pyodide's boot outlasts the acquisition and the
+  // sky view is already full by the time anyone can look at it.
+  chip.attach(new VirtualPa1010d({ acquireFromFirstCommand: true }));
   // A slowly wandering analog signal so the ADC readouts are not flatlined.
   const started = Date.now();
   const tick = () => {

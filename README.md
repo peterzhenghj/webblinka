@@ -64,7 +64,12 @@ shape of an adapter UI right.
   USBCFG, the UART Rx/Tx and I²C activity LEDs, the clock output, interrupt on
   change, ADC and DAC. Plus the chip-wide clock, reference-voltage and
   interrupt-edge settings those designations depend on.
-- **I²C** — bus scan and the GPS panel.
+- **I²C** — bus scan, and the GPS panel. That one leads with the sky view —
+  a signal-strength bar per satellite, greyed while too weak to use, amber once
+  usable, green once actually in the solution — because an acquiring receiver
+  and a broken one look identical for the first half-minute unless you can watch
+  the satellites arrive. Alongside it: time to first fix, satellites used versus
+  in view, PDOP/HDOP/VDOP, and the raw NMEA.
 - **Python** — the REPL and the PyPI installer.
 
 `input`/`output`/`analog_in`/`analog_out` go through `digitalio` and `analogio`,
