@@ -76,9 +76,19 @@ report protocol over the HID transport Blinka already owns. Still no fork.
 ## When the bus misbehaves
 
 Any failed call into Python dumps the last two dozen HID transfers to the log —
-command, reply, and the I²C engine state the chip reported. Python's traceback
-tells you which line raised; only the bytes tell you why, which matters when the
-hardware is on someone else's desk.
+command, reply, and the I²C engine state the chip reported. So does any report
+that the bus is unhealthy, even when nothing threw: a chip claiming to be wedged
+on a free bus is at least as likely to be us misreading the reply as it is to be
+the hardware. Python's traceback tells you which line raised; only the bytes tell
+you why, which matters when the hardware is on someone else's desk.
+
+Waiting for the engine to go idle sends the cancel **once** and then polls with a
+plain status read. Re-sending it every poll re-triggers the wind-down being
+waited on — releasing the bus goes through a STOP — so the loop pins the engine
+in the state it is trying to leave and reports a healthy chip as stuck.
+`Mcp2221Emulator.cancelRestartsOnRepeat` models that, and defaults to on: code
+that only works against the forgiving interpretation is code that breaks on real
+hardware.
 
 The MCP2221's cancel is a request the engine takes a few hundred microseconds to
 honour. Blinka waits a flat millisecond and then issues its next command, so when

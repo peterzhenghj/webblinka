@@ -243,7 +243,7 @@ async function start(
     ui.reset.hidden = false;
     ui.status.set(`Connected — ${label}`, "ok");
     ui.log.write(`Blinka ${runtime.blinka} on Python ${runtime.python}, chip ${board.chip}.`);
-    reportBusState(ui, board.bus);
+    reportBusState(ui, session, board.bus);
   } catch (err) {
     ui.status.set("Failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");
@@ -258,7 +258,7 @@ async function start(
  * stuck and a reset fixes it; either low and a device is holding the line, which
  * no amount of resetting the MCP2221 will change.
  */
-function reportBusState(ui: Ui, bus: BusState): void {
+function reportBusState(ui: Ui, session: PythonSession, bus: BusState): void {
   if (bus.idle) return;
   const lines = `SCL ${bus.scl ? "high" : "low"}, SDA ${bus.sda ? "high" : "low"}`;
   const held = !bus.scl || !bus.sda;
@@ -271,6 +271,10 @@ function reportBusState(ui: Ui, bus: BusState): void {
           "press Reset chip."),
     "stderr",
   );
+  // Nothing threw, so no traceback carries the trace. Report it anyway: a chip
+  // that says it is wedged on a free bus is at least as likely to be us
+  // misreading the reply as it is to be the hardware.
+  ui.log.write(session.trace.format(), "stderr");
 }
 
 async function resetChip(session: PythonSession, ui: Ui): Promise<void> {
@@ -289,7 +293,7 @@ async function resetChip(session: PythonSession, ui: Ui): Promise<void> {
     await ui.gpio.enable(); // a reset put every pin back to its flash default
     ui.status.set("Connected", "ok");
     ui.log.write(`Chip is back, I²C engine ${bus.state}.`);
-    reportBusState(ui, bus);
+    reportBusState(ui, session, bus);
   } catch (err) {
     ui.status.set("Reset failed", "error");
     ui.log.write(err instanceof Error ? err.message : String(err), "stderr");

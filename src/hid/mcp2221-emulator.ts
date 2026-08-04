@@ -109,6 +109,15 @@ export class Mcp2221Emulator {
    * a command issued too soon after a cancel is rejected as busy.
    */
   cancelLatency = 0;
+  /**
+   * Whether asking to cancel again, while one is already winding down, restarts
+   * the wind-down. Releasing the bus goes through a STOP, so a chip that behaves
+   * this way can be held in that state forever by a poll loop that re-sends the
+   * cancel each time. Defaulted on because it is the pessimistic assumption and
+   * code that only works against the forgiving chip is code that breaks on real
+   * hardware -- which is exactly what happened.
+   */
+  cancelRestartsOnRepeat = true;
   /** Test hook: every address a write command targets, and its payload length. */
   onProbe: ((address: number, length: number) => void) | null = null;
   #cancelPending = 0;
@@ -217,7 +226,7 @@ export class Mcp2221Emulator {
       // its own clock, not on how often it is polled.
       if (!busy) {
         this.#settle();
-      } else if (this.#cancelPending === 0) {
+      } else if (this.#cancelPending === 0 || this.cancelRestartsOnRepeat) {
         if (this.cancelLatency > 0) this.#cancelPending = this.cancelLatency;
         else this.#settle();
       }

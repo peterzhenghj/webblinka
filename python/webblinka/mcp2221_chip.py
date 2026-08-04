@@ -173,18 +173,25 @@ def force_idle(attempts: int = 8) -> dict[str, Any]:
     two reasons this can fail to reach idle. Both high means the bus is free
     and the chip itself is stuck -- a reset clears that. Either one low means a
     device is holding the line and no amount of cancelling will help.
+
+    Note that the cancel is sent *once*. Repeating it on every poll re-triggers
+    the wind-down the poll is waiting on -- releasing the bus goes through a
+    STOP -- so a loop that keeps asking can hold the engine in exactly the state
+    it is trying to leave, and report a perfectly healthy chip as wedged.
     """
     import time
 
-    r = []
-    for attempt in range(attempts):
-        r = xfer(bytes([CMD_STATUS, 0x00, 0x10]))  # status + cancel transfer
-        if r[1] != 0x00:
-            raise RuntimeError(f"cancel rejected with 0x{r[1]:02x}")
+    r = xfer(bytes([CMD_STATUS, 0x00, 0x10]))  # status, and cancel any transfer
+    if r[1] != 0x00:
+        raise RuntimeError(f"cancel rejected with 0x{r[1]:02x}")
+
+    for _ in range(attempts):
         if r[8] == 0x00:
             break
-        if attempt < attempts - 1:
-            time.sleep(0.002)
+        time.sleep(0.002)
+        r = xfer(bytes([CMD_STATUS]))  # plain status: ask, do not re-cancel
+        if r[1] != 0x00:
+            raise RuntimeError(f"status rejected with 0x{r[1]:02x}")
 
     state = r[8]
     return {

@@ -25,6 +25,24 @@ test("a slow cancel does not abort the scan", async () => {
   assert.deepEqual(found, [0x10], "the GPS must still be found past the wedged probes");
 });
 
+test("waiting for idle does not re-send the cancel", async () => {
+  const chip = demoChip();
+  const { call } = await bootStack({ chip });
+  await call("connect");
+
+  // Releasing the bus goes through a STOP, so on a chip where asking again
+  // restarts that wind-down, a poll loop that re-sends the cancel every time
+  // holds the engine in the state it is waiting to leave -- and reports a
+  // perfectly healthy chip, free bus and all, as permanently wedged.
+  chip.cancelRestartsOnRepeat = true;
+  chip.cancelLatency = 2;
+  await call("i2c_scan").catch(() => undefined); // leave the engine mid-NACK
+
+  const bus = await call("force_idle");
+  assert.equal(bus.idle, true, `reported stuck in "${bus.state}" with SCL/SDA high`);
+  assert.deepEqual([bus.scl, bus.sda], [1, 1]);
+});
+
 test("force_idle polls until the engine is genuinely idle", async () => {
   const chip = demoChip();
   const { call } = await bootStack({ chip });
