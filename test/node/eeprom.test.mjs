@@ -155,3 +155,81 @@ test("one address, several plausible parts", async () => {
   const big = await call("device_start", "at24c512", 0x50);
   assert.equal(big.info.size, 65536);
 });
+
+// ---------------------------------------------------------------- banking
+
+// Parts with more storage than their word address can reach borrow the low bits
+// of the I2C address for the high bits of the memory address. Linux's at24
+// driver states the rule as ceil(size / span) consecutive addresses, span being
+// 64 KiB for a two-byte word address and 256 bytes for a one-byte one.
+
+test("a banked part answers on every address it occupies", async () => {
+  // 24C08: 1 KiB of one-byte-addressed storage is four banks of 256.
+  const { chip } = chipWithEeprom({ size: 1024, pageSize: 16, addressBytes: 1 });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+
+  assert.deepEqual(await call("i2c_scan"), [0x50, 0x51, 0x52, 0x53]);
+});
+
+test("the high address bits come from the I2C address, not the word address", async () => {
+  const { chip, eeprom } = chipWithEeprom({ size: 1024, pageSize: 16, addressBytes: 1 });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+  await call("device_start", "at24c08", 0x50);
+
+  // 0x0250 is bank 2, word 0x50 -- reachable only via I2C address 0x52.
+  await call("device_command", "at24c08@0x50", "write", [0x250, b64([0xc0, 0xff, 0xee])]);
+  assert.deepEqual([...eeprom.peek(0x250, 3)], [0xc0, 0xff, 0xee]);
+
+  const read = await call("device_command", "at24c08@0x50", "read", [0x250, 3]);
+  assert.deepEqual(bytes(read.data), [0xc0, 0xff, 0xee]);
+
+  // The same word address in bank 0 is a different byte entirely. Getting the
+  // bank from the pointer instead of the address would alias these together.
+  assert.equal(eeprom.peek(0x50, 1)[0], 0xff, "0x0050 untouched");
+});
+
+test("a transfer never crosses a bank boundary", async () => {
+  const { chip, eeprom } = chipWithEeprom({ size: 1024, pageSize: 16, addressBytes: 1 });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+  await call("device_start", "at24c08", 0x50);
+
+  // Straddle the bank boundary at 0x100 as well as page boundaries.
+  const payload = Array.from({ length: 48 }, (_, i) => i + 1);
+  await call("device_command", "at24c08@0x50", "write", [0xf0, b64(payload)]);
+  assert.deepEqual([...eeprom.peek(0xf0, 48)], payload, "contiguous across the bank");
+
+  const read = await call("device_command", "at24c08@0x50", "read", [0xf0, 48]);
+  assert.deepEqual(bytes(read.data), payload, "and reads back the same way");
+});
+
+test("banking eats the address pins", async () => {
+  // A part occupying several addresses can only start where the whole run
+  // fits, which is why a 24C16 has nowhere to go at all.
+  const { DEVICES } = await import("../../src/devices/catalog.ts");
+  const bases = (id) => DEVICES.find((d) => d.id === id).addresses;
+
+  assert.deepEqual(bases("at24c16"), [0x50], "eight banks, no pin left");
+  assert.deepEqual(bases("at24c08"), [0x50, 0x54]);
+  assert.deepEqual(bases("at24c04"), [0x50, 0x52, 0x54, 0x56]);
+  assert.deepEqual(bases("at24c02"), [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]);
+  // Two-byte addressing reaches 64 KiB, so everything up to a 24C512 is one
+  // bank and keeps all three pins -- confirmed against the AT24C128/256
+  // datasheet, which has A0, A1 and A2 all functional.
+  assert.equal(bases("at24c256").length, 8);
+  assert.equal(bases("at24c512").length, 8);
+});
+
+test("the whole of a banked part is reachable", async () => {
+  const { chip, eeprom } = chipWithEeprom({ size: 512, pageSize: 16, addressBytes: 1 });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+  await call("device_start", "at24c04", 0x50);
+
+  await call("device_command", "at24c04@0x50", "fill", [0, 512, 0x5a]);
+  assert.deepEqual([...eeprom.peek(0, 512)], Array(512).fill(0x5a));
+  const read = await call("device_command", "at24c04@0x50", "read", [500, 12]);
+  assert.deepEqual(bytes(read.data), Array(12).fill(0x5a));
+});

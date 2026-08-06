@@ -13,6 +13,15 @@ HID, where each byte write is several 64-byte reports as well, it is worse
 still. Sixty-four times slower to do the same job is not a tradeoff worth
 taking, so the page write is implemented here.
 
+**Bank boundaries too.** A part with more storage than its word address can
+reach borrows the low bits of the *I2C* address for the high bits of the memory
+address, so a 24C16 answers on all eight of 0x50-0x57 and leaves no A-pin free
+to move it. The count is not a per-part quirk but a rule, taken from Linux's
+at24 driver: ceil(size / span) consecutive addresses, span being 64 KiB for a
+two-byte word address and 256 bytes for a one-byte one. It follows that the
+A-pins only reach the addresses a whole part fits in -- a 24C04 eats two, so it
+can start at 0x50, 0x52, 0x54 or 0x56 and nowhere else.
+
 **Page boundaries are the thing to get right.** A write that runs past the end
 of a page does not continue into the next one -- the internal address counter
 wraps to the *start of the same page* and overwrites what it just stored. It is
@@ -48,6 +57,24 @@ class EepromSpec:
         self.address_bytes = address_bytes
         self.write_ms = write_ms
 
+    @property
+    def span(self) -> int:
+        """Bytes reachable from one I2C address before banking takes over."""
+        return 65536 if self.address_bytes == 2 else 256
+
+    @property
+    def banks(self) -> int:
+        """Consecutive I2C addresses the part occupies. Linux's at24 rule."""
+        return max(1, -(-self.size // self.span))
+
+    def base_addresses(self, first: int = 0x50, last: int = 0x57) -> list[int]:
+        """Addresses the A-pins can actually put this part at.
+
+        A part occupying several addresses has to start where the whole run
+        fits, which is why a 24C16 has nowhere to go but 0x50.
+        """
+        return [a for a in range(first, last + 1, self.banks) if a + self.banks - 1 <= last]
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "label": self.label,
@@ -55,21 +82,28 @@ class EepromSpec:
             "pageSize": self.page_size,
             "addressBytes": self.address_bytes,
             "pages": self.size // self.page_size,
+            "banks": self.banks,
+            "span": self.span,
         }
 
 
 # Capacities are the part number's kilo*bits* over eight: a "256" is 32 KiB.
-# Parts of 2 Kbit and below use a single address byte, and 4-16 Kbit parts steal
-# the high address bits into the I2C address itself -- that banking is a
-# different addressing model and is deliberately not supported here rather than
-# half-supported.
+# Sizes and address widths follow Linux's at24 chip table; page sizes come from
+# the datasheets, since at24 takes those from device tree rather than the part.
 EEPROM_TYPES: dict[str, EepromSpec] = {
-    "at24c256": EepromSpec(label="AT24C256", size=32 * 1024, page_size=64, address_bytes=2),
+    # Two-byte word address, so one I2C address each up to 64 KiB.
     "at24c512": EepromSpec(label="AT24C512", size=64 * 1024, page_size=128, address_bytes=2),
+    "at24c256": EepromSpec(label="AT24C256", size=32 * 1024, page_size=64, address_bytes=2),
     "at24c128": EepromSpec(label="AT24C128", size=16 * 1024, page_size=64, address_bytes=2),
     "at24c64": EepromSpec(label="AT24C64", size=8 * 1024, page_size=32, address_bytes=2),
     "24lc32": EepromSpec(label="24LC32", size=4 * 1024, page_size=32, address_bytes=2),
+    # One-byte word address. Past 256 bytes these bank into extra I2C
+    # addresses, which is what eats their A-pins.
+    "at24c16": EepromSpec(label="AT24C16", size=2 * 1024, page_size=16, address_bytes=1),
+    "at24c08": EepromSpec(label="AT24C08", size=1024, page_size=16, address_bytes=1),
+    "at24c04": EepromSpec(label="AT24C04", size=512, page_size=16, address_bytes=1),
     "at24c02": EepromSpec(label="AT24C02", size=256, page_size=8, address_bytes=1),
+    "at24c01": EepromSpec(label="AT24C01", size=128, page_size=8, address_bytes=1),
 }
 
 DEFAULT_ADDRESS = 0x50
@@ -95,14 +129,22 @@ class SerialEeprom(Driver):
     def start(self) -> dict[str, Any]:
         from adafruit_bus_device.i2c_device import I2CDevice
 
-        # I2CDevice probes on construction, so a wrong address fails here rather
-        # than returning 0xff for every byte -- which is what an absent EEPROM
-        # looks like, and is indistinguishable from a blank one.
-        self._device = I2CDevice(self.bus, self.address)
+        # One handle per bank. I2CDevice probes on construction, so a part that
+        # is absent, or smaller than the one selected, fails here rather than
+        # returning 0xff for every byte -- which is exactly what a blank EEPROM
+        # looks like, and so is worth telling apart.
+        self._device = [
+            I2CDevice(self.bus, self.address + bank) for bank in range(self.SPEC.banks)
+        ]
         return {"address": self.address, **self.SPEC.as_dict()}
 
     def stop(self) -> None:
         self._device = None
+
+    def _bank(self, offset: int):
+        """The handle and word address for a byte, as at24_translate_offset does."""
+        bank, word = divmod(offset, self.SPEC.span)
+        return self._require()[bank], word
 
     def poll(self) -> dict[str, Any]:
         """EEPROMs have nothing to report over time; the panel reads on demand.
@@ -125,17 +167,23 @@ class SerialEeprom(Driver):
 
     def _read(self, offset: int, length: int) -> dict[str, Any]:
         self._check(offset, length)
-        device = self._require()
+        self._require()
         out = bytearray(length)
 
         # A sequential read needs the word address written once; the part then
         # streams from there, so the only chunking is the MCP2221's own limit.
         read = 0
         while read < length:
-            want = min(MAX_READ, length - read)
+            here = offset + read
+            handle, word = self._bank(here)
+            # Never let one transfer cross a bank: some parts roll a sequential
+            # read into the next slave address and some do not, and stopping at
+            # the boundary is right for both.
+            room = self.SPEC.span - word
+            want = min(MAX_READ, length - read, room)
             chunk = bytearray(want)
-            with device:
-                device.write_then_readinto(self._word_address(offset + read), chunk)
+            with handle:
+                handle.write_then_readinto(self._word_address(word), chunk)
             out[read : read + want] = chunk
             read += want
 
@@ -145,38 +193,39 @@ class SerialEeprom(Driver):
 
     def _write(self, offset: int, data: bytes) -> dict[str, Any]:
         self._check(offset, len(data))
-        device = self._require()
+        self._require()
         page = self.SPEC.page_size
 
         written = 0
         pages = 0
         while written < len(data):
             here = offset + written
+            handle, word = self._bank(here)
             # Stop at the next page boundary. Running past it would wrap to the
             # start of this page rather than continuing, silently overwriting
-            # the bytes just stored.
+            # the bytes just stored. A bank is a whole number of pages, so this
+            # keeps transfers inside a bank as well.
             room = page - (here % page)
             chunk = data[written : written + min(room, len(data) - written)]
-            with device:
-                device.write(self._word_address(here) + chunk)
-            self._await_write()
+            with handle:
+                handle.write(self._word_address(word) + chunk)
+            self._await_write(handle)
             written += len(chunk)
             pages += 1
 
         return {"offset": offset, "written": written, "pages": pages}
 
-    def _await_write(self) -> None:
+    def _await_write(self, handle) -> None:
         """Wait out the internal write cycle by polling for an ACK.
 
         The part stops answering its address entirely while it is writing, so a
         bare zero-length write either succeeds -- meaning it is ready -- or
         raises, meaning it is not.
         """
-        device = self._require()
         for _ in range(ACK_POLL_ATTEMPTS):
             try:
-                with device:
-                    device.write(b"")
+                with handle:
+                    handle.write(b"")
                 return
             except OSError:
                 time.sleep(self.SPEC.write_ms / 1000 / 4)

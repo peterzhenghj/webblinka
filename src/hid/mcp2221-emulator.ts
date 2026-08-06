@@ -145,11 +145,14 @@ export class Mcp2221Emulator {
   #interruptDetected = false;
 
   attach(device: VirtualI2cDevice): void {
-    this.#bus.set(device.address, device);
+    for (const address of device.addresses ?? [device.address]) {
+      this.#bus.set(address, device);
+    }
   }
 
   get devices(): VirtualI2cDevice[] {
-    return [...this.#bus.values()];
+    // Deduplicated: a part spanning several addresses is still one part.
+    return [...new Set(this.#bus.values())];
   }
 
   /** Drive an ADC channel (0 = GP1, 1 = GP2, 2 = GP3) with a 10-bit value. */
@@ -476,7 +479,7 @@ export class Mcp2221Emulator {
     const bytes = Uint8Array.from(this.#write.bytes);
     this.#write = null;
     try {
-      this.#bus.get(address)!.write(bytes);
+      this.#bus.get(address)!.write(bytes, address);
     } catch (err) {
       if (!(err instanceof NackError)) throw err;
       // A device that declines looks exactly like an absent one from the bus's
@@ -507,7 +510,7 @@ export class Mcp2221Emulator {
     this.#addrNacked = false;
     let data: Uint8Array;
     try {
-      data = device.read(total);
+      data = device.read(total, address);
     } catch (err) {
       if (!(err instanceof NackError)) throw err;
       this.#addrNacked = true;

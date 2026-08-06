@@ -57,24 +57,47 @@ export const DEVICES: DeviceEntry[] = [
   ...eeproms(),
 ];
 
-/** Every catalogued EEPROM. Kept together because only the numbers differ. */
+/**
+ * Every catalogued EEPROM. Kept together because only the numbers differ, and
+ * everything else about them follows from those numbers.
+ *
+ * The addresses are derived rather than listed. A part with more storage than
+ * its word address can reach borrows the low bits of the I2C address for the
+ * high bits of the memory address, so it occupies several consecutive
+ * addresses -- ceil(size / span), where span is 64 KiB for a two-byte word
+ * address and 256 bytes for a one-byte one, which is Linux's at24 rule. Those
+ * are addresses the A-pins can no longer reach: a 24C04 eats two and can only
+ * start on an even one, and a 24C16 eats all eight and cannot be moved at all.
+ */
 function eeproms(): DeviceEntry[] {
-  const parts: [id: string, name: string, kib: number, page: number][] = [
-    ["at24c256", "AT24C256", 32, 64],
-    ["at24c512", "AT24C512", 64, 128],
-    ["at24c128", "AT24C128", 16, 64],
-    ["at24c64", "AT24C64", 8, 32],
-    ["24lc32", "24LC32", 4, 32],
-    ["at24c02", "AT24C02", 0.25, 8],
+  const parts: [id: string, name: string, bytes: number, page: number, addrBytes: 1 | 2][] = [
+    ["at24c512", "AT24C512", 64 * 1024, 128, 2],
+    ["at24c256", "AT24C256", 32 * 1024, 64, 2],
+    ["at24c128", "AT24C128", 16 * 1024, 64, 2],
+    ["at24c64", "AT24C64", 8 * 1024, 32, 2],
+    ["24lc32", "24LC32", 4 * 1024, 32, 2],
+    ["at24c16", "AT24C16", 2 * 1024, 16, 1],
+    ["at24c08", "AT24C08", 1024, 16, 1],
+    ["at24c04", "AT24C04", 512, 16, 1],
+    ["at24c02", "AT24C02", 256, 8, 1],
+    ["at24c01", "AT24C01", 128, 8, 1],
   ];
-  return parts.map(([id, name, kib, page]) => ({
-    id,
-    name: `${name} EEPROM`,
-    description: `${kib >= 1 ? `${kib} KiB` : `${kib * 1024} B`}, ${page}-byte pages`,
-    addresses: [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57],
-    library: "adafruit_bus_device",
-    create: (session) => new EepromPanel(session),
-  }));
+  return parts.map(([id, name, bytes, page, addrBytes]) => {
+    const span = addrBytes === 2 ? 65536 : 256;
+    const banks = Math.max(1, Math.ceil(bytes / span));
+    const addresses: number[] = [];
+    for (let base = 0x50; base + banks - 1 <= 0x57; base += banks) addresses.push(base);
+    return {
+      id,
+      name: `${name} EEPROM`,
+      description:
+        `${bytes >= 1024 ? `${bytes / 1024} KiB` : `${bytes} B`}, ${page}-byte pages` +
+        (banks > 1 ? `, spans ${banks} addresses` : ""),
+      addresses,
+      library: "adafruit_bus_device",
+      create: (session) => new EepromPanel(session),
+    };
+  });
 }
 
 export function deviceById(id: string): DeviceEntry | undefined {

@@ -90,9 +90,15 @@ shape of an adapter UI right.
     The panel says which, and warns when the dew point is close enough to
     ambient that surfaces will wet.
   - **AT24C256 and the 24-series EEPROMs** — a hex viewer and editor. One
-    driver and one panel cover AT24C02 through AT24C512, because the family
+    driver and one panel cover AT24C01 through AT24C512, because the family
     differs only in capacity, page size and address width; a new part is a row
-    in `EEPROM_TYPES` and a row in the catalogue. The panel draws the page grid
+    in `EEPROM_TYPES` and a row in the catalogue. Everything else follows from
+    those three numbers, including which I²C addresses the part can sit at:
+    one with more storage than its word address can reach borrows the low bits
+    of the I²C address, taking `ceil(size / span)` consecutive addresses — the
+    rule from Linux's [at24 driver][at24]. So a 24C04 eats two addresses and
+    can only start on an even one, and a 24C16 eats all eight and its A-pins
+    do nothing. The panel draws the page grid
     because page boundaries are where these parts bite: a write running past
     the end of a page does not continue into the next, it wraps to the start of
     the same page and silently overwrites what it just stored. The driver
@@ -252,3 +258,4 @@ cold start does not depend on PyPI.
 [mcp2221]: https://www.microchip.com/en-us/product/MCP2221
 [jspi]: https://developer.chrome.com/blog/webassembly-jspi
 [playground]: https://github.com/johntalton/webapp-device-playground
+[at24]: https://github.com/torvalds/linux/blob/master/drivers/misc/eeprom/at24.c
