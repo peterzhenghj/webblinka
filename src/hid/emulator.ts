@@ -1,6 +1,7 @@
 import { VirtualAht10 } from "./devices/aht10.ts";
 import { VirtualEeprom } from "./devices/eeprom.ts";
 import { VirtualPa1010d } from "./devices/pa1010d.ts";
+import { VirtualRv1805 } from "./devices/rv1805.ts";
 import { Mcp2221Emulator } from "./mcp2221-emulator.ts";
 import { MCP2221_PRODUCT_ID, MCP2221_VENDOR_ID } from "./webhid.ts";
 import { ReportQueue, type HidDeviceInfo, type HidTransport, type Report } from "./transport.ts";
@@ -105,6 +106,12 @@ export function defaultRig(): Mcp2221Emulator {
   // the scan has something to match against two catalogue entries.
   chip.attach(new VirtualAht10());
   chip.attach(new VirtualEeprom({ contents: demoEepromContents() }));
+  // A few seconds out and running conspicuously fast. A real RV-1805 is within
+  // a couple of ppm, which takes an hour of watching to resolve at this part's
+  // hundredth-second resolution -- so the demo would spend the whole time
+  // saying "not yet". 900 ppm is a badly sick crystal, resolves in about ten
+  // seconds, and is the only way the panel's actual point is visible in a demo.
+  chip.attach(new VirtualRv1805({ epoch: Date.now() / 1000 - 4.2, driftPpm: 900 }));
   // A slowly wandering analog signal so the ADC readouts are not flatlined.
   const started = Date.now();
   const tick = () => {

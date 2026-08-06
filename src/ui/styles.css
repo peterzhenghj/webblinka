@@ -534,6 +534,34 @@ select {
   font-size: 0.9rem;
 }
 
+/* --------------------------------------------------------------------- rtc */
+
+.rtc-clock {
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.35rem;
+}
+
+.rtc-offset {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.rtc-offset[data-tone="warn"] {
+  color: var(--warn);
+}
+
+/* Status rows carry their own tone: an RTC on its RC oscillator keeps perfect
+   time as far as the time registers show, so the flag is the only warning. */
+.facts dd[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.facts dd[data-tone="error"] {
+  color: var(--error);
+}
+
 /* ----------------------------------------------------------------- hexdump */
 
 .hexdump {

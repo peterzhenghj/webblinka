@@ -1,6 +1,7 @@
 import type { DevicePanel, DeviceSession } from "./panel.ts";
 import { AhtPanel } from "../ui/panels/aht10.ts";
 import { EepromPanel } from "../ui/panels/eeprom.ts";
+import { RtcPanel } from "../ui/panels/rtc.ts";
 import { GpsPanel } from "../ui/panels/gps.ts";
 
 /**
@@ -48,6 +49,16 @@ export const DEVICES: DeviceEntry[] = [
     addresses: [0x38],
     library: "adafruit_circuitpython_ahtx0",
     create: (session) => new AhtPanel(session),
+  },
+  {
+    id: "rv1805",
+    name: "RV-1805 RTC",
+    description: "Micro Crystal / Abracon AB1805 real-time clock",
+    // Fixed at 0x69, which it shares with an MPU-6050 among others -- so the
+    // driver checks the part number register before believing the scan.
+    addresses: [0x69],
+    library: "adafruit_bus_device",
+    create: (session) => new RtcPanel(session),
   },
   // The 24-series EEPROMs. One driver and one panel serve the whole family --
   // they differ only in capacity, page size and address width -- so a new part

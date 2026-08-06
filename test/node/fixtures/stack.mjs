@@ -14,6 +14,7 @@ import { Mcp2221Emulator } from "../../../src/hid/mcp2221-emulator.ts";
 import { VirtualAht10 } from "../../../src/hid/devices/aht10.ts";
 import { VirtualEeprom } from "../../../src/hid/devices/eeprom.ts";
 import { VirtualPa1010d } from "../../../src/hid/devices/pa1010d.ts";
+import { VirtualRv1805 } from "../../../src/hid/devices/rv1805.ts";
 import { PY_ROOT, bootstrapSource } from "../../../src/worker/bootstrap.ts";
 import { Serializer } from "../../../src/worker/serialize.ts";
 
@@ -63,6 +64,14 @@ export function chipWithEeprom(options = {}) {
   const eeprom = new VirtualEeprom(options);
   chip.attach(eeprom);
   return { chip, eeprom };
+}
+
+/** A chip with one RV-1805 on it. */
+export function chipWithRtc(options = {}) {
+  const chip = new Mcp2221Emulator();
+  const rtc = new VirtualRv1805(options);
+  chip.attach(rtc);
+  return { chip, rtc };
 }
 
 /** The demo rig: a GPS and a temperature/humidity sensor on one bus. */

@@ -61,3 +61,4 @@ def _load_handlers() -> None:
     from .drivers import aht10  # noqa: F401
     from .drivers import eeprom  # noqa: F401
     from .drivers import gps_pa1010d  # noqa: F401
+    from .drivers import rtc  # noqa: F401

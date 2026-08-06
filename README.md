@@ -105,6 +105,20 @@ shape of an adapter UI right.
     splits every write so that cannot happen, and the emulator reproduces the
     wrap so a driver that stopped splitting would fail the tests rather than
     someone's board.
+  - **RV-1805 RTC** — the clock, and the thing a clock panel is actually for:
+    drift. Reading a clock once tells you nothing about it, since one thirty
+    seconds out and one gaining thirty seconds a day look identical in a single
+    sample. The panel measures the rate against the host across the session and
+    states the precision that measurement currently supports — over a short
+    window the answer is quantisation, and "±217 ppm so far" is worth more than
+    a confident 3. It also surfaces which oscillator is running: falling back
+    to the internal RC costs orders of magnitude of accuracy and changes
+    nothing about how the time registers look.
+
+    The panel is generic ([`rtc.ts`](src/ui/panels/rtc.ts)); a part supplies
+    where its time registers are, what its status bits mean and how finely it
+    counts fractions of a second. DS3231, DS1307 and PCF8563 differ in exactly
+    those, so each is a driver and no UI.
 - **Python** — the REPL and the PyPI installer.
 
 The EEPROM driver does not use `adafruit_24lc32`, the family's CircuitPython
