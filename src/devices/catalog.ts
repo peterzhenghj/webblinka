@@ -1,5 +1,6 @@
 import type { DevicePanel, DeviceSession } from "./panel.ts";
 import { AhtPanel } from "../ui/panels/aht10.ts";
+import { EepromPanel } from "../ui/panels/eeprom.ts";
 import { GpsPanel } from "../ui/panels/gps.ts";
 
 /**
@@ -48,7 +49,33 @@ export const DEVICES: DeviceEntry[] = [
     library: "adafruit_circuitpython_ahtx0",
     create: (session) => new AhtPanel(session),
   },
+  // The 24-series EEPROMs. One driver and one panel serve the whole family --
+  // they differ only in capacity, page size and address width -- so a new part
+  // is a row here and a row in EEPROM_TYPES. They all sit at 0x50-0x57 by their
+  // A0/A1/A2 pins, which is why several of them offer the same eight addresses:
+  // the scan cannot tell them apart, so it proposes all of them and you pick.
+  ...eeproms(),
 ];
+
+/** Every catalogued EEPROM. Kept together because only the numbers differ. */
+function eeproms(): DeviceEntry[] {
+  const parts: [id: string, name: string, kib: number, page: number][] = [
+    ["at24c256", "AT24C256", 32, 64],
+    ["at24c512", "AT24C512", 64, 128],
+    ["at24c128", "AT24C128", 16, 64],
+    ["at24c64", "AT24C64", 8, 32],
+    ["24lc32", "24LC32", 4, 32],
+    ["at24c02", "AT24C02", 0.25, 8],
+  ];
+  return parts.map(([id, name, kib, page]) => ({
+    id,
+    name: `${name} EEPROM`,
+    description: `${kib >= 1 ? `${kib} KiB` : `${kib * 1024} B`}, ${page}-byte pages`,
+    addresses: [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57],
+    library: "adafruit_bus_device",
+    create: (session) => new EepromPanel(session),
+  }));
+}
 
 export function deviceById(id: string): DeviceEntry | undefined {
   return DEVICES.find((device) => device.id === id);

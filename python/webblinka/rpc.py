@@ -59,4 +59,5 @@ def _load_handlers() -> None:
     from . import console, mcp2221_chip, session  # noqa: F401
     from .drivers import base  # noqa: F401
     from .drivers import aht10  # noqa: F401
+    from .drivers import eeprom  # noqa: F401
     from .drivers import gps_pa1010d  # noqa: F401

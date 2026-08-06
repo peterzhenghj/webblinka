@@ -534,6 +534,90 @@ select {
   font-size: 0.9rem;
 }
 
+/* ----------------------------------------------------------------- hexdump */
+
+.hexdump {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.hex-row {
+  display: flex;
+  gap: 1rem;
+  white-space: pre;
+  width: max-content;
+}
+
+/* A rule where each page begins. Page boundaries are the thing that catches
+   people out on these parts, so they are drawn rather than left to be learned. */
+.hex-row[data-page-start="true"] {
+  border-top: 1px solid var(--line-strong);
+  margin-top: 0.15rem;
+  padding-top: 0.15rem;
+}
+
+.hex-row:first-child[data-page-start="true"] {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.hex-offset {
+  color: var(--muted);
+}
+
+.hex-bytes {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Nudge a gap at the halfway mark, the way every hex dump does. */
+.hex-byte:nth-child(8) {
+  margin-right: 0.5rem;
+}
+
+/* Erased bytes are the majority of a fresh part; dimming them makes the
+   content legible at a glance. */
+.hex-byte.erased {
+  color: var(--line-strong);
+}
+
+.hex-ascii {
+  color: var(--muted);
+}
+
+.hexnav {
+  margin-bottom: 0.75rem;
+}
+
+input.mono {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 0.25rem 0.4rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+input.short {
+  width: 7ch;
+}
+
+.field.grow {
+  flex: 1 1 14rem;
+}
+
+input.grow {
+  width: 100%;
+}
+
 /* ------------------------------------------------------------- aht10 trend */
 
 .aht-chart-svg {

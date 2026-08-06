@@ -12,6 +12,7 @@ import { loadPyodide } from "pyodide";
 import { EmulatorTransport } from "../../../src/hid/emulator.ts";
 import { Mcp2221Emulator } from "../../../src/hid/mcp2221-emulator.ts";
 import { VirtualAht10 } from "../../../src/hid/devices/aht10.ts";
+import { VirtualEeprom } from "../../../src/hid/devices/eeprom.ts";
 import { VirtualPa1010d } from "../../../src/hid/devices/pa1010d.ts";
 import { PY_ROOT, bootstrapSource } from "../../../src/worker/bootstrap.ts";
 import { Serializer } from "../../../src/worker/serialize.ts";
@@ -54,6 +55,14 @@ export function demoChip(pa1010dOptions = {}) {
   const chip = new Mcp2221Emulator();
   chip.attach(new VirtualPa1010d(pa1010dOptions));
   return chip;
+}
+
+/** A chip with one EEPROM on it, sized however the test wants. */
+export function chipWithEeprom(options = {}) {
+  const chip = new Mcp2221Emulator();
+  const eeprom = new VirtualEeprom(options);
+  chip.attach(eeprom);
+  return { chip, eeprom };
 }
 
 /** The demo rig: a GPS and a temperature/humidity sensor on one bus. */

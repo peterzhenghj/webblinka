@@ -1,4 +1,4 @@
-import type { VirtualI2cDevice } from "./i2c-device.ts";
+import { NackError, type VirtualI2cDevice } from "./i2c-device.ts";
 
 /**
  * A software MCP2221 speaking the same 64-byte HID command protocol as the real
@@ -473,8 +473,20 @@ export class Mcp2221Emulator {
       return;
     }
 
-    this.#bus.get(address)!.write(Uint8Array.from(this.#write.bytes));
+    const bytes = Uint8Array.from(this.#write.bytes);
     this.#write = null;
+    try {
+      this.#bus.get(address)!.write(bytes);
+    } catch (err) {
+      if (!(err instanceof NackError)) throw err;
+      // A device that declines looks exactly like an absent one from the bus's
+      // side: the command is accepted and the NACK surfaces in the status
+      // register afterwards. An EEPROM mid-write-cycle is the usual reason.
+      this.#addrNacked = true;
+      this.#i2cState = STATE_ADDR_NACK;
+      reply[2] = this.#i2cState;
+      return;
+    }
     // A no-stop write leaves the bus held so a repeated-start read can follow.
     this.#i2cState = command === CMD_I2C_WRITE_NOSTOP ? STATE_WRITING_NO_STOP : STATE_IDLE;
     reply[2] = this.#i2cState;
@@ -493,7 +505,16 @@ export class Mcp2221Emulator {
     }
 
     this.#addrNacked = false;
-    const data = device.read(total);
+    let data: Uint8Array;
+    try {
+      data = device.read(total);
+    } catch (err) {
+      if (!(err instanceof NackError)) throw err;
+      this.#addrNacked = true;
+      this.#i2cState = STATE_ADDR_NACK;
+      this.#read = { data: new Uint8Array(0), offset: 0, nacked: true };
+      return;
+    }
     this.#read = { data, offset: 0, nacked: false };
     this.#i2cState = STATE_IDLE;
     reply[2] = this.#i2cState;

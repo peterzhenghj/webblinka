@@ -1,4 +1,5 @@
 import { VirtualAht10 } from "./devices/aht10.ts";
+import { VirtualEeprom } from "./devices/eeprom.ts";
 import { VirtualPa1010d } from "./devices/pa1010d.ts";
 import { Mcp2221Emulator } from "./mcp2221-emulator.ts";
 import { MCP2221_PRODUCT_ID, MCP2221_VENDOR_ID } from "./webhid.ts";
@@ -82,7 +83,18 @@ export class EmulatorTransport implements HidTransport {
   }
 }
 
-/** The board demo mode presents: an MCP2221 with a GPS on the bus. */
+/** Something legible in the hex dump rather than 32 KiB of 0xff. */
+function demoEepromContents(): Uint8Array {
+  const text = new TextEncoder().encode(
+    "webblinka demo EEPROM\nAT24C256, 64-byte pages.\n" +
+      "Try writing across a page boundary at 0x0040.\n",
+  );
+  const contents = new Uint8Array(256).fill(0xff);
+  contents.set(text.subarray(0, 256));
+  return contents;
+}
+
+/** The board demo mode presents: an MCP2221 with three parts on its bus. */
 export function defaultRig(): Mcp2221Emulator {
   const chip = new Mcp2221Emulator();
   // Start the cold start when the driver starts the module, not when the page
@@ -92,6 +104,7 @@ export function defaultRig(): Mcp2221Emulator {
   // A second part, so demo mode shows a bus with more than one thing on it and
   // the scan has something to match against two catalogue entries.
   chip.attach(new VirtualAht10());
+  chip.attach(new VirtualEeprom({ contents: demoEepromContents() }));
   // A slowly wandering analog signal so the ADC readouts are not flatlined.
   const started = Date.now();
   const tick = () => {

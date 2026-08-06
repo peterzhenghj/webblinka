@@ -89,7 +89,24 @@ shape of an adapter UI right.
     number gives no way to tell a settled reading from one still coming down.
     The panel says which, and warns when the dew point is close enough to
     ambient that surfaces will wet.
+  - **AT24C256 and the 24-series EEPROMs** — a hex viewer and editor. One
+    driver and one panel cover AT24C02 through AT24C512, because the family
+    differs only in capacity, page size and address width; a new part is a row
+    in `EEPROM_TYPES` and a row in the catalogue. The panel draws the page grid
+    because page boundaries are where these parts bite: a write running past
+    the end of a page does not continue into the next, it wraps to the start of
+    the same page and silently overwrites what it just stored. The driver
+    splits every write so that cannot happen, and the emulator reproduces the
+    wrap so a driver that stopped splitting would fail the tests rather than
+    someone's board.
 - **Python** — the REPL and the PyPI installer.
+
+The EEPROM driver does not use `adafruit_24lc32`, the family's CircuitPython
+driver, and the reason is measured rather than aesthetic: it writes one byte at
+a time with a flat 5 ms sleep after each, which on a 32 KiB AT24C256 is 164
+seconds of sleeping before any bus traffic, against 2.6 seconds page-at-a-time.
+It builds on `adafruit_bus_device` instead, which is still a real CircuitPython
+library, one level down.
 
 `input`/`output`/`analog_in`/`analog_out` go through `digitalio` and `analogio`,
 because running the real CircuitPython API is the point. The rest are chip
