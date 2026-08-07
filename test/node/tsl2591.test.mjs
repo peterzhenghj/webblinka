@@ -145,6 +145,13 @@ test("a reading taken straight after a range change is flagged, not trusted", as
   // under the old one -- so scaling it by the new gain gives a number wrong by
   // the ratio between them, which looks like the light changed.
   const { call } = await manual({ lux: 30, infraredFraction: 0.2 });
+  // At the longest integration first, so the window in which the stale count is
+  // still on offer is 600 ms rather than 100. The test has to poll inside that
+  // window, and one RPC round trip on a loaded CI runner is not reliably under
+  // a tenth of a second.
+  await call("device_command", "tsl2591@0x29", "set_integration", [5]);
+  await new Promise((resolve) => setTimeout(resolve, 1400));
+
   await call("device_command", "tsl2591@0x29", "set_gain", [0x20]); // 25x -> 428x
   const immediate = await call("device_poll", "tsl2591@0x29");
 
@@ -153,7 +160,7 @@ test("a reading taken straight after a range change is flagged, not trusted", as
   // 25x, so dividing it by 428 puts the reading about seventeen times low.
   assert.ok(immediate.lux < 10, `stale reading came out at ${immediate.lux} lx`);
 
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await new Promise((resolve) => setTimeout(resolve, 1400));
   const settled = await call("device_poll", "tsl2591@0x29");
   assert.equal(settled.settling, false);
   assert.ok(Math.abs(settled.lux - 30) / 30 < 0.05, `settled at ${settled.lux} lx`);

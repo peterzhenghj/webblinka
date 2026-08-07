@@ -11,6 +11,19 @@ import { bootStack, chipWithRtc } from "./fixtures/stack.mjs";
 
 const flagsOf = (state) => Object.fromEntries(state.flags.map((f) => [f.label, f]));
 
+/**
+ * A stopped clock, for the tests that are about decoding rather than elapsing.
+ *
+ * The emulated part keeps real time by default, so anything asserting on what
+ * it reads back is racing Pyodide's boot -- a second or two locally and five on
+ * a loaded CI runner. Freezing `now` makes the device read back exactly what it
+ * was given, which is both what these tests mean and what they can assert.
+ */
+function frozen(options = {}) {
+  const at = options.epoch === undefined ? Date.now() : options.epoch * 1000;
+  return chipWithRtc({ ...options, now: () => at });
+}
+
 /** A clock the test drives by hand, so drift is exact rather than wall-clock. */
 function clocked(options = {}) {
   const state = { ms: Date.UTC(2026, 0, 2, 3, 4, 5) };
@@ -19,13 +32,16 @@ function clocked(options = {}) {
 }
 
 test("reads the calendar back as UTC", async () => {
-  const { chip } = chipWithRtc({ epoch: Date.UTC(2026, 6, 4, 12, 34, 56) / 1000 });
+  const { chip } = frozen({ epoch: Date.UTC(2026, 6, 4, 12, 34, 56) / 1000 });
   const { call } = await bootStack({ chip });
   await call("connect");
   await call("device_start", "rv1805", 0x69);
 
   const state = await call("device_poll", "rv1805@0x69");
-  assert.match(state.iso, /^2026-07-04T12:34:5\d/, `got ${state.iso}`);
+  // To the second, because the clock is stopped. Matching only the first nine
+  // of the minute's ten seconds meant the assertion failed whenever Pyodide
+  // took more than four seconds to boot, which on CI it does.
+  assert.match(state.iso, /^2026-07-04T12:34:56/, `got ${state.iso}`);
   assert.equal(state.label, "RV-1805");
 });
 
@@ -56,14 +72,14 @@ test("a part that will not answer fails at start", async () => {
 });
 
 test("setting the clock from a host timestamp round-trips", async () => {
-  const { chip } = chipWithRtc({ epoch: 0 });
+  const { chip } = frozen({ epoch: 0 });
   const { call } = await bootStack({ chip });
   await call("connect");
   await call("device_start", "rv1805", 0x69);
 
   const target = Date.UTC(2027, 10, 23, 1, 2, 3) / 1000;
   const after = await call("device_command", "rv1805@0x69", "set_from_unix", [target]);
-  assert.match(after.iso, /^2027-11-23T01:02:0\d/, `got ${after.iso}`);
+  assert.match(after.iso, /^2027-11-23T01:02:03/, `got ${after.iso}`);
 
   // And the offset against the host is now the difference between the host's
   // real clock and the fictional date it was just set to, not a small number.
@@ -208,7 +224,9 @@ test("setting the clock keeps the fraction of a second", async () => {
   // Truncating to whole seconds would leave every clock this panel sets slow
   // by up to a second -- five centuries of error budget on a part specified to
   // two parts per million.
-  const { chip, rtc } = chipWithRtc({ epoch: 0 });
+  // Frozen, so the twenty-millisecond bound below measures the part's own
+  // resolution rather than however long the round trip happened to take.
+  const { chip, rtc } = frozen({ epoch: 0 });
   const { call } = await bootStack({ chip });
   await call("connect");
   await call("device_start", "rv1805", 0x69);
@@ -224,7 +242,7 @@ test("setting the clock keeps the fraction of a second", async () => {
 });
 
 test("a fraction that rounds up carries into the next second", async () => {
-  const { chip, rtc } = chipWithRtc({ epoch: 0 });
+  const { chip, rtc } = frozen({ epoch: 0 });
   const { call } = await bootStack({ chip });
   await call("connect");
   await call("device_start", "rv1805", 0x69);
