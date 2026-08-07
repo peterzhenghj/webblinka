@@ -88,7 +88,11 @@ shape of an adapter UI right.
     power-up it reads high on temperature and low on humidity, and a single
     number gives no way to tell a settled reading from one still coming down.
     The panel says which, and warns when the dew point is close enough to
-    ambient that surfaces will wet.
+    ambient that surfaces will wet. Generic
+    ([`hygrometer.ts`](src/ui/panels/hygrometer.ts)): the physics lives in
+    [`hygrometry.py`](python/webblinka/drivers/hygrometry.py) and each part
+    supplies only how to take a reading, what to call itself, which knobs it
+    has, and its own account of why a reading might still be drifting.
   - **AT24C256 and the 24-series EEPROMs** — a hex viewer and editor. One
     driver and one panel cover AT24C01 through AT24C512, because the family
     differs only in capacity, page size and address width; a new part is a row
@@ -105,6 +109,15 @@ shape of an adapter UI right.
     splits every write so that cannot happen, and the emulator reproduces the
     wrap so a driver that stopped splitting would fail the tests rather than
     someone's board.
+  - **SHT45 / SHT4x** — Sensirion's precision part, sharing every line of the
+    AHT10's panel. The two differ only in what the driver declares: the SHT has
+    a precision setting, a serial number and a heater, and the AHT has a reset
+    button. The heater is the reason the filtered version exists — the PTFE cap
+    keeps liquid off the polymer, but after a long soak near saturation the
+    polymer holds water and reads high, and actual condensation pins it near
+    100% until it clears. A pulse drives both off, at the cost of warming the
+    die, so the panel counts down how long the temperature is still measuring
+    the heater rather than the room.
   - **AS7341 spectral sensor** — the eight visible channels drawn as a
     spectrum, each bar at its own wavelength's colour, plus clear and near-IR.
     Plotted in *basic counts* — raw divided by gain and integration time —

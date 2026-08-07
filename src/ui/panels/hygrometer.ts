@@ -2,13 +2,28 @@ import type { DevicePanel, DeviceSession } from "../../devices/panel.ts";
 import { el, svg } from "../dom.ts";
 import { panel, statusPill } from "../panel.ts";
 
-export interface AhtState {
+/** A knob the driver says it has. The panel renders it without knowing the part. */
+export interface HygrometerControl {
+  kind: "select" | "button";
+  command: string;
+  label: string;
+  value?: string;
+  options?: { value: string; label: string }[];
+  args?: unknown[];
+  title?: string;
+}
+
+export interface HygrometerState {
+  label: string;
   temperatureC: number;
   temperatureF: number;
   relativeHumidity: number;
   dewPointC: number | null;
   absoluteHumidity: number;
-  status: number;
+  /** Why this part's reading might still be moving, in its own terms. */
+  settlingHint: string;
+  controls: HygrometerControl[];
+  details: { label: string; value: string; tone?: "ok" | "warn" | "error" }[];
 }
 
 const POLL_INTERVAL_MS = 1000;
@@ -29,18 +44,21 @@ interface Sample {
 }
 
 /**
- * Temperature and humidity, plus the two things the part does not measure and
- * everyone actually wants: the dew point, and whether the reading has settled.
+ * Any temperature and humidity sensor.
  *
- * The settling matters more than it sounds. An AHT10 self-heats -- its own die
- * warms the humidity element -- so for a minute or two after power-up, or after
- * being handled, it reads high on temperature and low on humidity while it
- * equilibrates. A single number gives no clue which half of that you are
- * looking at, and someone reading 23.4 C off a sensor that is still coming down
- * from 25 has no way to know. Hence the trend, and hence saying plainly when it
- * has stopped moving.
+ * Nothing here knows which part it is talking to: the driver supplies the
+ * readings, the rows worth showing, the controls it has, and its own account of
+ * why a reading might still be drifting. An AHT10 and an SHT45 share every line
+ * of this.
+ *
+ * It shows the dew point and absolute humidity because the part measures
+ * neither and both are what people want -- and it shows the *trend*, because a
+ * single number cannot tell a settled reading from one still on its way. That
+ * matters differently for different parts: an AHT10 self-heats for a minute or
+ * two after power-up, and an SHT45 does not much, but will for a few seconds
+ * after its heater runs. Each says so in its own words.
  */
-export class AhtPanel implements DevicePanel {
+export class HygrometerPanel implements DevicePanel {
   readonly root: HTMLElement;
   readonly #session: DeviceSession;
   readonly #status = statusPill("Starting…", "busy");
@@ -48,7 +66,10 @@ export class AhtPanel implements DevicePanel {
   readonly #chart = el("div", { class: "aht-chart" });
   readonly #chartNote = el("p", { class: "hint" });
   readonly #note = el("p", { class: "aht-note" });
+  readonly #details = el("dl", { class: "facts" });
+  readonly #controls = el("div", { class: "fields" });
   readonly #history: Sample[] = [];
+  #controlsSignature = "";
   #timer: number | null = null;
   #polling = false;
 
@@ -56,13 +77,7 @@ export class AhtPanel implements DevicePanel {
     this.#session = session;
     const p = panel("Reading");
     this.root = p.root;
-
-    const reset = el("button", {
-      text: "Reset sensor",
-      title: "Soft-reset and recalibrate. Also restarts the settling window.",
-    });
-    reset.addEventListener("click", () => void this.#reset(reset));
-    p.actions.append(this.#status.node, reset);
+    p.actions.append(this.#status.node);
 
     const facts = el("dl", { class: "facts" });
     for (const [key, label] of [
@@ -71,7 +86,6 @@ export class AhtPanel implements DevicePanel {
       ["dewPoint", "Dew point"],
       ["absolute", "Absolute humidity"],
       ["trend", "Trend"],
-      ["status", "Status byte"],
     ] as const) {
       const value = el("dd", { text: "—" });
       this.#facts.set(key, value);
@@ -80,12 +94,16 @@ export class AhtPanel implements DevicePanel {
 
     p.body.append(
       el("div", { class: "gps-columns" }, [
-        el("div", {}, [facts, this.#note]),
+        el("div", {}, [facts, this.#details, this.#note]),
         el("div", {}, [
           el("h3", { class: "subhead", text: "Last 5 minutes" }),
           this.#chart,
           this.#chartNote,
         ]),
+      ]),
+      el("fieldset", { class: "settings-group" }, [
+        el("legend", { text: "Sensor" }),
+        this.#controls,
       ]),
     );
   }
@@ -101,28 +119,64 @@ export class AhtPanel implements DevicePanel {
     this.#timer = null;
   }
 
-  async #reset(button: HTMLButtonElement): Promise<void> {
-    button.disabled = true;
-    this.#status.set("Resetting…", "busy");
+  async #run(control: HygrometerControl, button: HTMLElement): Promise<void> {
+    const disable = button as HTMLButtonElement | HTMLSelectElement;
+    disable.disabled = true;
+    this.#status.set("Working…", "busy");
     try {
-      await this.#session.command("reset");
-      // The history describes a sensor that no longer exists: it was just
-      // recalibrated, and the whole point of the window is the settling.
+      await this.#session.command(control.command, ...(control.args ?? []));
+      // Anything that changes the sensor's state invalidates the window: the
+      // whole point of it is the settling, and this is a different settling.
       this.#history.length = 0;
       await this.#poll();
     } catch (err) {
       this.#status.set(err instanceof Error ? err.message : String(err), "error");
     } finally {
-      button.disabled = false;
+      disable.disabled = false;
     }
+  }
+
+  #renderControls(controls: HygrometerControl[]): void {
+    // Rebuilt only when the set changes, so a select does not lose focus or
+    // reset mid-interaction on every poll.
+    const signature = controls.map((c) => `${c.command}:${c.value ?? ""}`).join("|");
+    if (signature === this.#controlsSignature) return;
+    this.#controlsSignature = signature;
+
+    this.#controls.replaceChildren(
+      ...controls.map((control) => {
+        if (control.kind === "select") {
+          const select = el("select", { title: control.title ?? "" });
+          for (const option of control.options ?? []) {
+            select.append(
+              el("option", {
+                value: option.value,
+                text: option.label,
+                selected: option.value === control.value,
+              }),
+            );
+          }
+          select.addEventListener("change", () =>
+            void this.#run({ ...control, args: [select.value] }, select),
+          );
+          return el("label", { class: "field" }, [
+            el("span", { text: control.label }),
+            select,
+          ]);
+        }
+        const button = el("button", { text: control.label, title: control.title ?? "" });
+        button.addEventListener("click", () => void this.#run(control, button));
+        return button;
+      }),
+    );
   }
 
   async #poll(): Promise<void> {
     if (this.#polling) return;
     this.#polling = true;
-    let state: AhtState;
+    let state: HygrometerState;
     try {
-      state = await this.#session.poll<AhtState>();
+      state = await this.#session.poll<HygrometerState>();
     } catch (err) {
       this.#status.set(err instanceof Error ? err.message : String(err), "error");
       return;
@@ -156,7 +210,15 @@ export class AhtPanel implements DevicePanel {
     );
     this.#set("absolute", `${state.absoluteHumidity.toFixed(2)} g/m³`);
     this.#set("trend", describeDrift(drift, settled));
-    this.#set("status", `0x${state.status.toString(16).padStart(2, "0")} · calibrated`);
+
+    this.#details.replaceChildren(
+      ...state.details.flatMap((row) => {
+        const value = el("dd", {}, [el("span", { text: row.value })]);
+        value.dataset.tone = row.tone ?? "ok";
+        return [el("dt", { text: row.label }), value];
+      }),
+    );
+    this.#renderControls(state.controls);
 
     this.#note.textContent = advice(state, settled);
     this.#renderChart();
@@ -237,18 +299,14 @@ function describeDrift(drift: number | null, settled: boolean): string {
   return `${drift >= 0 ? "rising" : "falling"} ${Math.abs(drift).toFixed(2)} °C/min`;
 }
 
-function advice(state: AhtState, settled: boolean): string {
+function advice(state: HygrometerState, settled: boolean): string {
   if (state.dewPointC !== null && state.temperatureC - state.dewPointC < CONDENSATION_MARGIN_C) {
     return (
       `Dew point is within ${(state.temperatureC - state.dewPointC).toFixed(1)} °C of ambient — ` +
       `anything cooler than ${state.dewPointC.toFixed(1)} °C will condense.`
     );
   }
-  if (!settled) {
-    return (
-      "Still moving. An AHT10 self-heats, so it reads high on temperature and " +
-      "low on humidity for a minute or two after power-up or handling."
-    );
-  }
-  return "";
+  // The part's own account of why it might still be drifting, because the
+  // reason differs and a generic "still settling" says nothing useful.
+  return settled ? "" : state.settlingHint;
 }

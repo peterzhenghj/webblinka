@@ -1,5 +1,5 @@
 import type { DevicePanel, DeviceSession } from "./panel.ts";
-import { AhtPanel } from "../ui/panels/aht10.ts";
+import { HygrometerPanel } from "../ui/panels/hygrometer.ts";
 import { As7341Panel } from "../ui/panels/as7341.ts";
 import { EepromPanel } from "../ui/panels/eeprom.ts";
 import { RtcPanel } from "../ui/panels/rtc.ts";
@@ -49,7 +49,16 @@ export const DEVICES: DeviceEntry[] = [
     // The whole AHTx0 family is strapped to 0x38 with no address pins.
     addresses: [0x38],
     library: "adafruit_circuitpython_ahtx0",
-    create: (session) => new AhtPanel(session),
+    create: (session) => new HygrometerPanel(session),
+  },
+  {
+    id: "sht4x",
+    name: "SHT45 / SHT4x",
+    description: "Sensirion precision temperature and humidity, with heater",
+    // The SHT40/41/43/45 all sit at 0x44; the -B suffix parts are at 0x45.
+    addresses: [0x44, 0x45],
+    library: "adafruit_circuitpython_sht4x",
+    create: (session) => new HygrometerPanel(session),
   },
   {
     id: "as7341",

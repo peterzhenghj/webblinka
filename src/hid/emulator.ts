@@ -3,6 +3,7 @@ import { VirtualAs7341 } from "./devices/as7341.ts";
 import { VirtualEeprom } from "./devices/eeprom.ts";
 import { VirtualPa1010d } from "./devices/pa1010d.ts";
 import { VirtualRv1805 } from "./devices/rv1805.ts";
+import { VirtualSht4x } from "./devices/sht4x.ts";
 import { Mcp2221Emulator } from "./mcp2221-emulator.ts";
 import { MCP2221_PRODUCT_ID, MCP2221_VENDOR_ID } from "./webhid.ts";
 import { ReportQueue, type HidDeviceInfo, type HidTransport, type Report } from "./transport.ts";
@@ -107,6 +108,7 @@ export function defaultRig(): Mcp2221Emulator {
   // the scan has something to match against two catalogue entries.
   chip.attach(new VirtualAht10());
   chip.attach(new VirtualAs7341());
+  chip.attach(new VirtualSht4x());
   chip.attach(new VirtualEeprom({ contents: demoEepromContents() }));
   // A few seconds out and running conspicuously fast. A real RV-1805 is within
   // a couple of ppm, which takes an hour of watching to resolve at this part's

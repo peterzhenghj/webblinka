@@ -80,8 +80,12 @@ test("starting the driver resets and calibrates the part", async () => {
     "calibrate, in either the AHT10 or AHT20 spelling",
   );
   // Calibration is checked by the library, so a part that never sets the flag
-  // fails at start rather than reporting -50 C for ever.
-  assert.equal((await call("device_poll", "aht10@0x38")).status & 0x08, 0x08);
+  // fails at start rather than reporting -50 C for ever. The status byte is a
+  // part-specific row now that the panel is shared with the SHT4x.
+  const details = Object.fromEntries(
+    (await call("device_poll", "aht10@0x38")).details.map((d) => [d.label, d.value]),
+  );
+  assert.match(details["Status byte"], /^0x08 · calibrated$/);
 });
 
 test("the sensor is found by a scan and matched to its panel", async () => {

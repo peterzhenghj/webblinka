@@ -16,6 +16,7 @@
     "adafruit-circuitpython-gps==3.11.9",
     "adafruit-circuitpython-ahtx0==1.0.30",
     "adafruit-circuitpython-as7341==1.2.27",
+    "adafruit-circuitpython-sht4x==1.0.27",
     "adafruit-circuitpython-register==1.10.4"
   ],
   "files": [
@@ -28,6 +29,7 @@
     "adafruit_circuitpython_gps-3.11.9-py3-none-any.whl",
     "adafruit_circuitpython_register-1.10.4-py3-none-any.whl",
     "adafruit_circuitpython_requests-4.1.17-py3-none-any.whl",
+    "adafruit_circuitpython_sht4x-1.0.27-py3-none-any.whl",
     "adafruit_circuitpython_typing-1.12.3-py3-none-any.whl",
     "adafruit_platformdetect-3.89.1-py3-none-any.whl",
     "binho_host_adapter-0.1.6-py3-none-any.whl",
