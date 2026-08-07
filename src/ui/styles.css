@@ -1057,3 +1057,135 @@ input.grow {
 .notice[data-tone="warn"] {
   border-left-color: var(--warn);
 }
+
+/* --------------------------------------------------------------- lux scale */
+
+.lux-reading {
+  font-size: 2rem;
+  font-family: var(--mono);
+  margin: 0 0 0.6rem;
+  line-height: 1.1;
+}
+
+/* Saturated or mid-range-change: still shown, because the magnitude is real
+   information, but not at full confidence, because the digits are not. */
+.lux-reading.unusable {
+  color: var(--muted);
+}
+
+.lux-scale {
+  max-width: 30rem;
+  margin-bottom: 0.9rem;
+}
+
+.lux-track {
+  position: relative;
+  height: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  background: linear-gradient(to right, var(--bg), var(--line-strong));
+}
+
+.lux-notch {
+  position: absolute;
+  bottom: -0.25rem;
+  width: 1px;
+  height: 0.3rem;
+  background: var(--line-strong);
+}
+
+.lux-marker {
+  position: absolute;
+  top: -0.2rem;
+  width: 2px;
+  height: calc(100% + 0.4rem);
+  background: var(--accent);
+  transform: translateX(-1px);
+}
+
+.lux-marker.unusable {
+  background: var(--muted);
+}
+
+.lux-ticks {
+  position: relative;
+  /* Tall enough for the rotated labels to hang into. At 1.6rem they spilled
+     over the note below it. */
+  height: 3.6rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* Rotated because the landmarks are not evenly spaced -- the interesting ones
+   bunch up at the bright end -- and steeply enough that a label's horizontal
+   footprint is small, so two close landmarks lean past each other instead of
+   colliding. */
+.lux-tick {
+  position: absolute;
+  top: 0.2rem;
+  transform: rotate(45deg);
+  transform-origin: left top;
+  white-space: nowrap;
+}
+
+.lux-fill-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 0.4rem;
+}
+
+.lux-fill {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.lux-gauge {
+  position: relative;
+  width: 2.2rem;
+  height: 7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.2rem;
+  overflow: hidden;
+}
+
+.lux-gauge-fill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.lux-gauge.over .lux-gauge-fill {
+  background: var(--error);
+}
+
+.lux-gauge.under .lux-gauge-fill {
+  background: var(--muted);
+}
+
+.lux-gauge-value {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 0.2rem;
+}
+
+.lux-controls {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.lux-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.lux-controls select {
+  margin-left: auto;
+  min-width: 6.5rem;
+}

@@ -2,6 +2,7 @@ import type { DevicePanel, DeviceSession } from "./panel.ts";
 import { As5600Panel } from "../ui/panels/as5600.ts";
 import { HygrometerPanel } from "../ui/panels/hygrometer.ts";
 import { As7341Panel } from "../ui/panels/as7341.ts";
+import { Tsl2591Panel } from "../ui/panels/tsl2591.ts";
 import { EepromPanel } from "../ui/panels/eeprom.ts";
 import { RtcPanel } from "../ui/panels/rtc.ts";
 import { GpsPanel } from "../ui/panels/gps.ts";
@@ -87,6 +88,16 @@ export const DEVICES: DeviceEntry[] = [
     addresses: [0x39],
     library: "adafruit_circuitpython_as7341",
     create: (session) => new As7341Panel(session),
+  },
+  {
+    id: "tsl2591",
+    name: "TSL2591 light sensor",
+    description: "Illuminance over six decades, with visible and infrared apart",
+    // Fixed at 0x29, which it shares with the TCS34725 among others -- the
+    // driver checks the device ID register before believing the scan.
+    addresses: [0x29],
+    library: "adafruit_circuitpython_tsl2591",
+    create: (session) => new Tsl2591Panel(session),
   },
   {
     id: "rv1805",

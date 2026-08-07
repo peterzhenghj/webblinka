@@ -19,6 +19,7 @@ import { VirtualRv1805 } from "../../../src/hid/devices/rv1805.ts";
 import { VirtualSht4x } from "../../../src/hid/devices/sht4x.ts";
 import { VirtualHdc302x } from "../../../src/hid/devices/hdc302x.ts";
 import { VirtualAs5600 } from "../../../src/hid/devices/as5600.ts";
+import { VirtualTsl2591 } from "../../../src/hid/devices/tsl2591.ts";
 import { PY_ROOT, bootstrapSource } from "../../../src/worker/bootstrap.ts";
 import { Serializer } from "../../../src/worker/serialize.ts";
 
@@ -100,6 +101,14 @@ export function chipWithEncoder(options = {}) {
   const encoder = new VirtualAs5600(options);
   chip.attach(encoder);
   return { chip, encoder };
+}
+
+/** A chip with one TSL2591 on it. */
+export function chipWithLight(options = {}) {
+  const chip = new Mcp2221Emulator();
+  const sensor = new VirtualTsl2591(options);
+  chip.attach(sensor);
+  return { chip, sensor };
 }
 
 /** A chip with one RV-1805 on it. */

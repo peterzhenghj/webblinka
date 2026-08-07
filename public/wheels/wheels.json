@@ -19,6 +19,7 @@
     "adafruit-circuitpython-sht4x==1.0.27",
     "adafruit-circuitpython-hdc302x==1.0.10",
     "adafruit-circuitpython-as5600==1.0.3",
+    "adafruit-circuitpython-tsl2591==1.4.8",
     "adafruit-circuitpython-register==1.10.4"
   ],
   "files": [
@@ -34,6 +35,7 @@
     "adafruit_circuitpython_register-1.10.4-py3-none-any.whl",
     "adafruit_circuitpython_requests-4.1.17-py3-none-any.whl",
     "adafruit_circuitpython_sht4x-1.0.27-py3-none-any.whl",
+    "adafruit_circuitpython_tsl2591-1.4.8-py3-none-any.whl",
     "adafruit_circuitpython_typing-1.12.3-py3-none-any.whl",
     "adafruit_platformdetect-3.89.1-py3-none-any.whl",
     "binho_host_adapter-0.1.6-py3-none-any.whl",

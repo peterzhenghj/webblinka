@@ -133,6 +133,18 @@ shape of an adapter UI right.
     when they do, the dial greys rather than staying authoritative. Turn
     counting is the driver's job, since the chip wraps at 360 and has no idea
     how many times it has been round.
+  - **TSL2591 light sensor** — six decades of illuminance, which the part only
+    actually has if the gain and integration time suit the light. Choosing them
+    is the work of using this sensor, so the driver auto-ranges: from an
+    unsaturated count the right setting is calculable rather than searched for,
+    and from a saturated one it drops to the bottom of the ladder and calculates
+    from there — two integrations from anywhere. The stock library raises
+    `RuntimeError` on overflow, which blanks a panel exactly when you point it
+    at a window, so lux is computed here from the raw channels instead. When
+    both channels pin there is no number reported at all: the equation
+    subtracts infrared from visible, so two equal clipped counts cancel, and
+    any "floor" would be invented. The infrared share comes free from the same
+    two registers and says roughly what is lighting the room.
   - **AS7341 spectral sensor** — the eight visible channels drawn as a
     spectrum, each bar at its own wavelength's colour, plus clear and near-IR.
     Plotted in *basic counts* — raw divided by gain and integration time —

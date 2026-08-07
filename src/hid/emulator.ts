@@ -5,6 +5,7 @@ import { VirtualPa1010d } from "./devices/pa1010d.ts";
 import { VirtualRv1805 } from "./devices/rv1805.ts";
 import { VirtualSht4x } from "./devices/sht4x.ts";
 import { VirtualAs5600 } from "./devices/as5600.ts";
+import { VirtualTsl2591 } from "./devices/tsl2591.ts";
 import { Mcp2221Emulator } from "./mcp2221-emulator.ts";
 import { MCP2221_PRODUCT_ID, MCP2221_VENDOR_ID } from "./webhid.ts";
 import { ReportQueue, type HidDeviceInfo, type HidTransport, type Report } from "./transport.ts";
@@ -112,6 +113,10 @@ export function defaultRig(): Mcp2221Emulator {
   chip.attach(new VirtualSht4x());
   // Parked at an angle and slowly turning, so the dial is not frozen.
   chip.attach(new VirtualAs5600({ degrees: 137, gap: 0.45 }));
+  // Bright enough to saturate the library's default 25x gain, so demo mode
+  // opens on the panel doing the thing it is for -- ranging down out of an
+  // overflow -- rather than on a comfortable mid-scale reading.
+  chip.attach(new VirtualTsl2591({ lux: 3200, infraredFraction: 0.42 }));
   chip.attach(new VirtualEeprom({ contents: demoEepromContents() }));
   // A few seconds out and running conspicuously fast. A real RV-1805 is within
   // a couple of ppm, which takes an hour of watching to resolve at this part's
