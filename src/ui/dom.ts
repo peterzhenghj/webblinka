@@ -40,10 +40,12 @@ export function clear(node: Element): void {
 export function svg<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attrs: Record<string, string | number> = {},
-  children: Element[] = [],
+  children: (Element | string)[] = [],
 ): SVGElementTagNameMap[K] {
   const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
   for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+  // Strings become text, so <text> and <title> read like every other element
+  // here instead of needing their content poked in afterwards.
   node.append(...children);
   return node;
 }

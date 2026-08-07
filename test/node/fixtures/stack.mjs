@@ -12,6 +12,7 @@ import { loadPyodide } from "pyodide";
 import { EmulatorTransport } from "../../../src/hid/emulator.ts";
 import { Mcp2221Emulator } from "../../../src/hid/mcp2221-emulator.ts";
 import { VirtualAht10 } from "../../../src/hid/devices/aht10.ts";
+import { VirtualAs7341 } from "../../../src/hid/devices/as7341.ts";
 import { VirtualEeprom } from "../../../src/hid/devices/eeprom.ts";
 import { VirtualPa1010d } from "../../../src/hid/devices/pa1010d.ts";
 import { VirtualRv1805 } from "../../../src/hid/devices/rv1805.ts";
@@ -64,6 +65,14 @@ export function chipWithEeprom(options = {}) {
   const eeprom = new VirtualEeprom(options);
   chip.attach(eeprom);
   return { chip, eeprom };
+}
+
+/** A chip with one AS7341 on it. */
+export function chipWithSpectral(options = {}) {
+  const chip = new Mcp2221Emulator();
+  const sensor = new VirtualAs7341(options);
+  chip.attach(sensor);
+  return { chip, sensor };
 }
 
 /** A chip with one RV-1805 on it. */

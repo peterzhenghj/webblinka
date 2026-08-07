@@ -105,6 +105,15 @@ shape of an adapter UI right.
     splits every write so that cannot happen, and the emulator reproduces the
     wrap so a driver that stopped splitting would fail the tests rather than
     someone's board.
+  - **AS7341 spectral sensor** — the eight visible channels drawn as a
+    spectrum, each bar at its own wavelength's colour, plus clear and near-IR.
+    Plotted in *basic counts* — raw divided by gain and integration time —
+    because raw counts scale with both, so a spectrum drawn from them changes
+    when you touch a setting even though the light did not. Change the gain by
+    16× and the plot should not move; if it does, something is clipping.
+    Saturated channels are drawn hollow and named, since a channel at full
+    scale is reporting a floor rather than a measurement and the bars either
+    side of it describe a spectrum that does not exist.
   - **RV-1805 RTC** — the clock, and the thing a clock panel is actually for:
     drift. Reading a clock once tells you nothing about it, since one thirty
     seconds out and one gaining thirty seconds a day look identical in a single

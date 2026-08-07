@@ -1,4 +1,5 @@
 import { VirtualAht10 } from "./devices/aht10.ts";
+import { VirtualAs7341 } from "./devices/as7341.ts";
 import { VirtualEeprom } from "./devices/eeprom.ts";
 import { VirtualPa1010d } from "./devices/pa1010d.ts";
 import { VirtualRv1805 } from "./devices/rv1805.ts";
@@ -105,6 +106,7 @@ export function defaultRig(): Mcp2221Emulator {
   // A second part, so demo mode shows a bus with more than one thing on it and
   // the scan has something to match against two catalogue entries.
   chip.attach(new VirtualAht10());
+  chip.attach(new VirtualAs7341());
   chip.attach(new VirtualEeprom({ contents: demoEepromContents() }));
   // A few seconds out and running conspicuously fast. A real RV-1805 is within
   // a couple of ppm, which takes an hour of watching to resolve at this part's

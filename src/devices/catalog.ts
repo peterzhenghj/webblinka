@@ -1,5 +1,6 @@
 import type { DevicePanel, DeviceSession } from "./panel.ts";
 import { AhtPanel } from "../ui/panels/aht10.ts";
+import { As7341Panel } from "../ui/panels/as7341.ts";
 import { EepromPanel } from "../ui/panels/eeprom.ts";
 import { RtcPanel } from "../ui/panels/rtc.ts";
 import { GpsPanel } from "../ui/panels/gps.ts";
@@ -49,6 +50,16 @@ export const DEVICES: DeviceEntry[] = [
     addresses: [0x38],
     library: "adafruit_circuitpython_ahtx0",
     create: (session) => new AhtPanel(session),
+  },
+  {
+    id: "as7341",
+    name: "AS7341 spectral sensor",
+    description: "Eleven channels, 415–680 nm plus clear and near-IR",
+    // Strapped to 0x39, shared with the APDS-9960 among others -- the driver
+    // checks the WHOAMI before believing the scan.
+    addresses: [0x39],
+    library: "adafruit_circuitpython_as7341",
+    create: (session) => new As7341Panel(session),
   },
   {
     id: "rv1805",

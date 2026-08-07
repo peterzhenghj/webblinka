@@ -580,6 +580,30 @@ button.inline {
   color: var(--error);
 }
 
+/* ---------------------------------------------------------------- spectrum */
+
+.spectrum {
+  max-width: 30rem;
+  margin-bottom: 0.6rem;
+}
+
+.spectrum-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.spectrum-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.spectrum-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
 /* ----------------------------------------------------------------- hexdump */
 
 .hexdump {

@@ -50,6 +50,8 @@ REQUIREMENTS = [
     # Device drivers backing the built-in panels.
     "adafruit-circuitpython-gps==3.11.9",  # PA1010D and friends
     "adafruit-circuitpython-ahtx0==1.0.30",  # AHT10/AHT20/AHT21/DHT20
+    "adafruit-circuitpython-as7341==1.2.27",  # 11-channel spectral sensor
+    "adafruit-circuitpython-register==1.10.4",  # dep of as7341
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
