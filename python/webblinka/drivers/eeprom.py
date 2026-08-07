@@ -49,12 +49,18 @@ class EepromSpec:
         size: int,
         page_size: int,
         address_bytes: int,
+        address_pins: int = 3,
         write_ms: float = 5.0,
     ) -> None:
         self.label = label
         self.size = size
         self.page_size = page_size
         self.address_bytes = address_bytes
+        #: A-pins the package actually bonds out. Not every part in the family
+        #: has three: the original AT24C128/256 leave pin 3 unconnected and
+        #: compare only A1 and A0, so four of them fit on a bus rather than
+        #: eight. This is a fact about the part, independent of banking.
+        self.address_pins = address_pins
         self.write_ms = write_ms
 
     @property
@@ -67,13 +73,19 @@ class EepromSpec:
         """Consecutive I2C addresses the part occupies. Linux's at24 rule."""
         return max(1, -(-self.size // self.span))
 
-    def base_addresses(self, first: int = 0x50, last: int = 0x57) -> list[int]:
-        """Addresses the A-pins can actually put this part at.
+    def base_addresses(self, first: int = 0x50) -> list[int]:
+        """Addresses this part can actually be put at.
 
-        A part occupying several addresses has to start where the whole run
-        fits, which is why a 24C16 has nowhere to go but 0x50.
+        Two separate limits, easily confused. Banking eats the *low* address
+        bits, so a part occupying several addresses can only start on a
+        multiple of that run -- a 24C16 takes all eight and has nowhere to go.
+        And the package only bonds out so many A-pins, which caps the range
+        regardless: the original AT24C128/256 have two, so they reach 0x53 and
+        no further no matter what pin 3 is tied to, because pin 3 is not
+        connected to anything inside.
         """
-        return [a for a in range(first, last + 1, self.banks) if a + self.banks - 1 <= last]
+        reachable = 1 << self.address_pins
+        return [first + i * self.banks for i in range(reachable // self.banks)]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +96,8 @@ class EepromSpec:
             "pages": self.size // self.page_size,
             "banks": self.banks,
             "span": self.span,
+            "addressPins": self.address_pins,
+            "baseAddresses": self.base_addresses(),
         }
 
 
@@ -92,9 +106,24 @@ class EepromSpec:
 # the datasheets, since at24 takes those from device tree rather than the part.
 EEPROM_TYPES: dict[str, EepromSpec] = {
     # Two-byte word address, so one I2C address each up to 64 KiB.
-    "at24c512": EepromSpec(label="AT24C512", size=64 * 1024, page_size=128, address_bytes=2),
-    "at24c256": EepromSpec(label="AT24C256", size=32 * 1024, page_size=64, address_bytes=2),
-    "at24c128": EepromSpec(label="AT24C128", size=16 * 1024, page_size=64, address_bytes=2),
+    "at24c512c": EepromSpec(
+        label="AT24C512C", size=64 * 1024, page_size=128, address_bytes=2, address_pins=3
+    ),
+    # The C revisions bond out A2; the originals do not. Same die size, same
+    # page size, different number of them on a bus -- which is exactly the
+    # thing that makes an address jumper appear to do nothing.
+    "at24c256c": EepromSpec(
+        label="AT24C256C", size=32 * 1024, page_size=64, address_bytes=2, address_pins=3
+    ),
+    "at24c256": EepromSpec(
+        label="AT24C256", size=32 * 1024, page_size=64, address_bytes=2, address_pins=2
+    ),
+    "at24c128c": EepromSpec(
+        label="AT24C128C", size=16 * 1024, page_size=64, address_bytes=2, address_pins=3
+    ),
+    "at24c128": EepromSpec(
+        label="AT24C128", size=16 * 1024, page_size=64, address_bytes=2, address_pins=2
+    ),
     "at24c64": EepromSpec(label="AT24C64", size=8 * 1024, page_size=32, address_bytes=2),
     "24lc32": EepromSpec(label="24LC32", size=4 * 1024, page_size=32, address_bytes=2),
     # One-byte word address. Past 256 bytes these bank into extra I2C

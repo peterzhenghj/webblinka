@@ -152,7 +152,7 @@ test("one address, several plausible parts", async () => {
 
   const small = await call("device_start", "24lc32", 0x50);
   assert.equal(small.info.size, 4096);
-  const big = await call("device_start", "at24c512", 0x50);
+  const big = await call("device_start", "at24c512c", 0x50);
   assert.equal(big.info.size, 65536);
 });
 
@@ -215,11 +215,22 @@ test("banking eats the address pins", async () => {
   assert.deepEqual(bases("at24c08"), [0x50, 0x54]);
   assert.deepEqual(bases("at24c04"), [0x50, 0x52, 0x54, 0x56]);
   assert.deepEqual(bases("at24c02"), [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]);
-  // Two-byte addressing reaches 64 KiB, so everything up to a 24C512 is one
-  // bank and keeps all three pins -- confirmed against the AT24C128/256
-  // datasheet, which has A0, A1 and A2 all functional.
-  assert.equal(bases("at24c256").length, 8);
-  assert.equal(bases("at24c512").length, 8);
+});
+
+test("the pin count caps the range independently of banking", async () => {
+  // A separate limit, and the one that bites: the original AT24C128/256 leave
+  // pin 3 unconnected and compare only A1 and A0, so four fit on a bus and an
+  // A2 jumper does nothing whatever it is tied to. The C revisions bond it
+  // out. Verified against Atmel doc0670 (pin 3 "NC", "the two device address
+  // bits A1, A0") and Atmel-8568F for the C part (pin 3 "A2").
+  const { DEVICES } = await import("../../src/devices/catalog.ts");
+  const bases = (id) => DEVICES.find((d) => d.id === id).addresses;
+
+  assert.deepEqual(bases("at24c256"), [0x50, 0x51, 0x52, 0x53], "two pins, four addresses");
+  assert.deepEqual(bases("at24c128"), [0x50, 0x51, 0x52, 0x53]);
+  assert.equal(bases("at24c256c").length, 8, "the C revision bonds out A2");
+  assert.equal(bases("at24c128c").length, 8);
+  assert.equal(bases("at24c512c").length, 8);
 });
 
 test("the whole of a banked part is reachable", async () => {

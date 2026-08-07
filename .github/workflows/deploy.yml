@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Never cancel a deploy in flight. Cancelling one halfway can leave the site
+  # serving a half-published build, and the run it would save is seconds.
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -47,6 +49,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Derived from the repository rather than hard-coded, so the site
+          # works whatever the repo is called. A project page is served from
+          # /<repo>/, but a user or organisation page (<owner>.github.io) is
+          # served from the root -- getting this wrong is the classic "deploys
+          # fine, loads a blank page" failure, because every asset 404s.
+          BASE_PATH: >-
+            ${{ github.event.repository.name == format('{0}.github.io', github.repository_owner)
+                && '/'
+                || format('/{0}/', github.event.repository.name) }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

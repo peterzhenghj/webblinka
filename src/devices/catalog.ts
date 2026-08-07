@@ -81,34 +81,56 @@ export const DEVICES: DeviceEntry[] = [
  * start on an even one, and a 24C16 eats all eight and cannot be moved at all.
  */
 function eeproms(): DeviceEntry[] {
-  const parts: [id: string, name: string, bytes: number, page: number, addrBytes: 1 | 2][] = [
-    ["at24c512", "AT24C512", 64 * 1024, 128, 2],
-    ["at24c256", "AT24C256", 32 * 1024, 64, 2],
-    ["at24c128", "AT24C128", 16 * 1024, 64, 2],
-    ["at24c64", "AT24C64", 8 * 1024, 32, 2],
-    ["24lc32", "24LC32", 4 * 1024, 32, 2],
-    ["at24c16", "AT24C16", 2 * 1024, 16, 1],
-    ["at24c08", "AT24C08", 1024, 16, 1],
-    ["at24c04", "AT24C04", 512, 16, 1],
-    ["at24c02", "AT24C02", 256, 8, 1],
-    ["at24c01", "AT24C01", 128, 8, 1],
+  // pins is how many A-pins the package bonds out, which is a datasheet fact
+  // and not always three: the original AT24C128/256 leave pin 3 unconnected,
+  // so tying it high does nothing at all and only four fit on a bus. The C
+  // revisions of the same parts do bond it out. That difference is invisible
+  // from the bus and is exactly what makes an address jumper look broken.
+  const parts: [
+    id: string,
+    name: string,
+    bytes: number,
+    page: number,
+    addrBytes: 1 | 2,
+    pins: number,
+  ][] = [
+    ["at24c512c", "AT24C512C", 64 * 1024, 128, 2, 3],
+    ["at24c256c", "AT24C256C", 32 * 1024, 64, 2, 3],
+    ["at24c256", "AT24C256", 32 * 1024, 64, 2, 2],
+    ["at24c128c", "AT24C128C", 16 * 1024, 64, 2, 3],
+    ["at24c128", "AT24C128", 16 * 1024, 64, 2, 2],
+    ["at24c64", "AT24C64", 8 * 1024, 32, 2, 3],
+    ["24lc32", "24LC32", 4 * 1024, 32, 2, 3],
+    ["at24c16", "AT24C16", 2 * 1024, 16, 1, 3],
+    ["at24c08", "AT24C08", 1024, 16, 1, 3],
+    ["at24c04", "AT24C04", 512, 16, 1, 3],
+    ["at24c02", "AT24C02", 256, 8, 1, 3],
+    ["at24c01", "AT24C01", 128, 8, 1, 3],
   ];
-  return parts.map(([id, name, bytes, page, addrBytes]) => {
+  return parts.map(([id, name, bytes, page, addrBytes, pins]) => {
     const span = addrBytes === 2 ? 65536 : 256;
     const banks = Math.max(1, Math.ceil(bytes / span));
+    // Banking eats the low address bits, so a multi-address part can only
+    // start on a multiple of its run; the pin count caps the range outright.
     const addresses: number[] = [];
-    for (let base = 0x50; base + banks - 1 <= 0x57; base += banks) addresses.push(base);
+    for (let i = 0; i < (1 << pins) / banks; i++) addresses.push(0x50 + i * banks);
     return {
       id,
       name: `${name} EEPROM`,
       description:
-        `${bytes >= 1024 ? `${bytes / 1024} KiB` : `${bytes} B`}, ${page}-byte pages` +
-        (banks > 1 ? `, spans ${banks} addresses` : ""),
+        `${bytes >= 1024 ? `${bytes / 1024} KiB` : `${bytes} B`}, ${page}-byte pages, ` +
+        `${hexAddress(addresses[0]!)}–${hexAddress(addresses.at(-1)!)}` +
+        (banks > 1 ? ` in steps of ${banks}` : "") +
+        (pins < 3 ? ` (A0–A${pins - 1} only)` : ""),
       addresses,
       library: "adafruit_bus_device",
       create: (session) => new EepromPanel(session),
     };
   });
+}
+
+function hexAddress(value: number): string {
+  return `0x${value.toString(16)}`;
 }
 
 export function deviceById(id: string): DeviceEntry | undefined {

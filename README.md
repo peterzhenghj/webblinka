@@ -208,6 +208,23 @@ PA1010D GPS on its I²C bus that acquires a fix over the first few seconds. The
 same emulator backs the test suite, so CI exercises the full stack — Pyodide,
 the shim, JSPI, stock Blinka — with no hardware attached.
 
+## Deploying
+
+Pushing to `main` builds and publishes to GitHub Pages
+([`deploy.yml`](.github/workflows/deploy.yml)). The deploy is gated on the test
+job, so a red suite does not ship.
+
+One setting has to be changed by hand, once: **Settings → Pages → Source →
+GitHub Actions**. Without it the workflow succeeds and nothing is served.
+
+The base path is derived from the repository name, so the site works whether it
+is a project page at `/<repo>/` or a user page at the root. Hard-coding it is
+the classic cause of a deploy that reports success and loads a blank page,
+because every asset 404s one directory up.
+
+Pyodide itself comes from the jsDelivr CDN; the ~1.4 MB of CircuitPython wheels
+are served from the site. Nothing else is fetched at runtime.
+
 ## Development
 
 Node comes from `.nvmrc` and must be new enough for unflagged JSPI (Node 24 is
