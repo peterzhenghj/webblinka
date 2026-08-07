@@ -237,8 +237,8 @@ export function mount(root: HTMLElement): void {
   demo.addEventListener("click", () => {
     ui.setDemoMode(true);
     log.write(
-      "Starting in demo mode: emulated MCP2221 with a simulated PA1010D and " +
-        "AHT10 on its bus. " +
+      "Starting in demo mode: emulated MCP2221 with a simulated PA1010D, " +
+        "AHT10, EEPROM and RV-1805 on its bus. " +
         "All readings from here are software-generated, not measurements.",
     );
     void start(session, ui, new EmulatorTransport(), "simulated device");

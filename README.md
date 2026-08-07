@@ -119,6 +119,12 @@ shape of an adapter UI right.
     where its time registers are, what its status bits mean and how finely it
     counts fractions of a second. DS3231, DS1307 and PCF8563 differ in exactly
     those, so each is a driver and no UI.
+
+    A status row that can be resolved carries its own fix: the oscillator
+    failure latch is set from the factory on any part whose crystal has not
+    been running, so a new one always reports it, and the row offers the Clear
+    that retires it. Setting the clock clears it too, since writing the time is
+    what makes the reading trustworthy again.
 - **Python** — the REPL and the PyPI installer.
 
 The EEPROM driver does not use `adafruit_24lc32`, the family's CircuitPython

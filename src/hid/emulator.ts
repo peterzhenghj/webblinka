@@ -111,7 +111,17 @@ export function defaultRig(): Mcp2221Emulator {
   // hundredth-second resolution -- so the demo would spend the whole time
   // saying "not yet". 900 ppm is a badly sick crystal, resolves in about ten
   // seconds, and is the only way the panel's actual point is visible in a demo.
-  chip.attach(new VirtualRv1805({ epoch: Date.now() / 1000 - 4.2, driftPpm: 900 }));
+  chip.attach(
+    new VirtualRv1805({
+      epoch: Date.now() / 1000 - 4.2,
+      driftPpm: 900,
+      // How one arrives out of its tube: the failure latch is set because the
+      // crystal has not been running, and stays set until someone clears it.
+      // Showing that is more useful than showing a clock that has never had a
+      // past, since it is the first thing a real part reports.
+      oscillatorFault: true,
+    }),
+  );
   // A slowly wandering analog signal so the ADC readouts are not flatlined.
   const started = Date.now();
   const tick = () => {

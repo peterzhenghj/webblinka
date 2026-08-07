@@ -9,6 +9,8 @@ import { VirtualWrongPart, VirtualSilentPart } from "../../src/hid/devices/rv180
 import { Mcp2221Emulator } from "../../src/hid/mcp2221-emulator.ts";
 import { bootStack, chipWithRtc } from "./fixtures/stack.mjs";
 
+const flagsOf = (state) => Object.fromEntries(state.flags.map((f) => [f.label, f]));
+
 /** A clock the test drives by hand, so drift is exact rather than wall-clock. */
 function clocked(options = {}) {
   const state = { ms: Date.UTC(2026, 0, 2, 3, 4, 5) };
@@ -117,15 +119,56 @@ test("reports the read latency as the floor on the offset", async () => {
   assert.ok(state.uncertaintyS < 5, `implausible: ${state.uncertaintyS}s`);
 });
 
+test("the oscillator-failure latch can be cleared", async () => {
+  // Sticky, and set from the factory: it latches whenever the crystal has not
+  // been running, so a part that has never had a backup cell reports it
+  // forever until something clears it. It is a claim about the past.
+  const { chip, rtc } = chipWithRtc({ oscillatorFault: true });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+  await call("device_start", "rv1805", 0x69);
+
+  const before = flagsOf(await call("device_poll", "rv1805@0x69"));
+  assert.match(before["Oscillator stopped"].value, /^yes/);
+  assert.equal(before["Oscillator stopped"].action, "clear_fault", "offers the fix inline");
+
+  await call("device_command", "rv1805@0x69", "clear_fault", []);
+  assert.equal(rtc.oscillatorFault, false, "the bit is actually cleared on the part");
+  assert.equal(flagsOf(await call("device_poll", "rv1805@0x69"))["Oscillator stopped"].value, "no");
+});
+
+test("setting the clock clears the failure latch too", async () => {
+  // Writing the time is what makes the data valid again, which is exactly when
+  // the flag stops being true -- Linux's abx80x driver clears it there as well.
+  const { chip, rtc } = chipWithRtc({ oscillatorFault: true });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+  await call("device_start", "rv1805", 0x69);
+
+  await call("device_command", "rv1805@0x69", "set_from_unix", [Date.now() / 1000]);
+  assert.equal(rtc.oscillatorFault, false);
+});
+
+test("the failure flag is not reported while running on the RC", async () => {
+  // There is no crystal to have failed, so the bit means nothing. Linux does
+  // not even read it in this mode.
+  const { chip } = chipWithRtc({ oscillatorFault: true, onRcOscillator: true });
+  const { call } = await bootStack({ chip });
+  await call("connect");
+  await call("device_start", "rv1805", 0x69);
+
+  const flags = flagsOf(await call("device_poll", "rv1805@0x69"));
+  assert.equal(flags["Oscillator stopped"], undefined, "not a row at all on the RC");
+  assert.match(flags.Oscillator.value, /RC/);
+});
+
 test("surfaces the status bits that explain a bad clock", async () => {
   const { chip } = chipWithRtc({ onRcOscillator: true, onBackupPower: true, stopped: true });
   const { call } = await bootStack({ chip });
   await call("connect");
   await call("device_start", "rv1805", 0x69);
 
-  const flags = Object.fromEntries(
-    (await call("device_poll", "rv1805@0x69")).flags.map((f) => [f.label, f]),
-  );
+  const flags = flagsOf(await call("device_poll", "rv1805@0x69"));
   // Running on the RC costs orders of magnitude of accuracy and looks
   // identical in the time registers, so it has to be visible somewhere.
   assert.match(flags.Oscillator.value, /RC/);

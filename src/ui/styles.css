@@ -357,6 +357,10 @@ select {
   gap: 0.3rem 1.25rem;
   margin: 0;
   font-size: 0.9rem;
+  /* Line the label up with its value's text. Grid items stretch by default, so
+     a row whose value is taller than one line -- one carrying a button, say --
+     leaves the label stranded at the top of a tall cell. */
+  align-items: baseline;
 }
 
 .facts dt {
@@ -367,6 +371,12 @@ select {
   margin: 0;
   font-family: var(--mono);
   font-size: 0.85rem;
+  /* Baseline again inside the row, so a button sits on the text's line rather
+     than shunting it. */
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 /* ------------------------------------------------------------ address grid */
@@ -546,6 +556,14 @@ select {
 .rtc-offset {
   margin: 0 0 0.5rem;
   font-size: 0.9rem;
+}
+
+/* A fix offered where the problem is stated, so it reads as part of the row. */
+button.inline {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.5rem;
+  line-height: 1.4;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .rtc-offset[data-tone="warn"] {

@@ -64,6 +64,11 @@ export class VirtualRv1805 implements VirtualI2cDevice {
     if (options.stopped) this.#registers[CTRL1]! |= 1 << 7;
   }
 
+  /** Whether the latched oscillator-failure bit is set. For tests. */
+  get oscillatorFault(): boolean {
+    return ((this.#registers[OSC_STATUS] ?? 0) & (1 << 1)) !== 0;
+  }
+
   /** The simulated clock, in unix seconds. */
   get deviceUnix(): number {
     const elapsed = (this.#now() - this.#setAtHost) / 1000;

@@ -74,6 +74,9 @@ class RtcDriver(Driver):
         """Part-specific status, as rows the panel shows verbatim."""
         return []
 
+    def clear_fault(self) -> None:
+        """Retire any sticky "the oscillator stopped" flag. Not all parts have one."""
+
     def identify(self) -> str | None:
         """Whatever the part can be asked about itself, if anything."""
         return None
@@ -107,7 +110,13 @@ class RtcDriver(Driver):
             # The caller passes the host's idea of now, taken as close to the
             # call as it can manage; the transfer itself is the remaining error.
             self.write_clock(float(args[0]))
+            # Setting the time is what makes the data valid again, so this is
+            # the moment to retire any "the clock stopped at some point" latch.
+            self.clear_fault()
             self._first = None  # the old drift baseline describes a different clock
+            return self.poll()
+        if name == "clear_fault":
+            self.clear_fault()
             return self.poll()
         if name == "reset_drift":
             self._first = None
@@ -195,6 +204,10 @@ RV1805_CTRL1 = 0x10
 RV1805_OSC_STATUS = 0x1D
 RV1805_ID0 = 0x28
 
+# Oscillator Status (0x1D) bits, named as Linux's abx80x driver names them.
+OSS_OF = 1 << 1
+OSS_OMODE = 1 << 4
+
 #: Register 0x28 always reads 0x18 on this part. Worth checking, because 0x69
 #: is a busy address -- an MPU-6050 sits there too -- so "something answered"
 #: is not the same as "the RTC is there".
@@ -264,6 +277,16 @@ class Rv1805(RtcDriver):
             ),
         )
 
+    def clear_fault(self) -> None:
+        """Clear the latched oscillator-failure flag.
+
+        Read-modify-write of the one bit, as Linux's abx80x driver does. The
+        configuration key at 0x1F guards the *oscillator control* register at
+        0x1C; this is the status register next door and needs no unlocking.
+        """
+        oscillator = self._read(RV1805_OSC_STATUS, 1)[0]
+        self._write(RV1805_OSC_STATUS, bytes([oscillator & ~OSS_OF]))
+
     def flags(self) -> list[dict[str, Any]]:
         status = self._read(RV1805_STATUS, 1)[0]
         control = self._read(RV1805_CTRL1, 1)[0]
@@ -273,20 +296,38 @@ class Rv1805(RtcDriver):
         # RC costs about three orders of magnitude of accuracy, and nothing
         # about the time it reports looks any different -- so it is the first
         # thing to check when a clock is drifting absurdly.
-        on_rc = bool(oscillator & (1 << 4))
-        failed = bool(oscillator & (1 << 1))
+        on_rc = bool(oscillator & OSS_OMODE)
+        # The failure flag only means anything on the crystal; Linux does not
+        # even read it in RC mode, because there is no crystal to have failed.
+        failed = bool(oscillator & OSS_OF) and not on_rc
 
-        return [
+        rows = [
             {
                 "label": "Oscillator",
                 "value": "RC (internal)" if on_rc else "XT (32.768 kHz crystal)",
                 "tone": "warn" if on_rc else "ok",
             },
-            {
-                "label": "Oscillator fault",
-                "value": "yes — the time is not trustworthy" if failed else "no",
-                "tone": "error" if failed else "ok",
-            },
+        ]
+        if not on_rc:
+            rows.append(
+                {
+                    "label": "Oscillator stopped",
+                    # Sticky, and set from the factory: it latches whenever the
+                    # crystal has not been running, which on a part that has
+                    # never had a backup cell fitted means "since it was made".
+                    # It is a statement about the past, not about now -- what it
+                    # says is that the count has a gap in it somewhere, so the
+                    # time should not be believed until it is set again.
+                    "value": (
+                        "yes, at some point — set the clock to clear it"
+                        if failed
+                        else "no"
+                    ),
+                    "tone": "warn" if failed else "ok",
+                    "action": "clear_fault" if failed else None,
+                }
+            )
+        return rows + [
             {
                 "label": "Power",
                 "value": "running from backup" if status & (1 << 6) else "main supply",

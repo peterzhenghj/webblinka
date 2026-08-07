@@ -6,6 +6,8 @@ export interface RtcFlag {
   label: string;
   value: string;
   tone: "ok" | "warn" | "error";
+  /** A driver command that resolves this flag, when one exists. */
+  action?: string | null;
 }
 
 export interface RtcState {
@@ -150,16 +152,42 @@ export class RtcPanel implements DevicePanel {
       `(±${uncertainty.toFixed(0)} ms, the time the read itself takes)`;
     this.#offset.dataset.tone = Math.abs(ms) > 2000 ? "warn" : "ok";
 
-    this.#drift.textContent = describeDrift(state);
+    // The reasoning about what the drift figure is worth hangs off the offset
+    // line rather than taking a paragraph of its own -- it is the same thought,
+    // and it is long.
+    const drift = describeDrift(state);
+    this.#offset.title = drift.detail;
+    this.#drift.textContent = drift.summary;
+    this.#drift.hidden = drift.summary === "";
+    this.#drift.title = drift.detail;
     this.#renderFlags(state.flags);
   }
 
   #renderFlags(flags: RtcFlag[]): void {
     this.#flags.replaceChildren();
     for (const flag of flags) {
-      const value = el("dd", { text: flag.value });
+      const value = el("dd", {}, [el("span", { text: flag.value })]);
       value.dataset.tone = flag.tone;
+      if (flag.action) {
+        // A flag you can do something about should say so where it is raised,
+        // not leave you to find the button that clears it.
+        const fix = el("button", { class: "inline", text: "Clear" });
+        fix.addEventListener("click", () => void this.#act(flag.action!, fix));
+        value.append(" ", fix);
+      }
       this.#flags.append(el("dt", { text: flag.label }), value);
+    }
+  }
+
+  async #act(command: string, button: HTMLButtonElement): Promise<void> {
+    button.disabled = true;
+    try {
+      this.#render(await this.#session.command<RtcState>(command));
+      this.#message.textContent = "";
+    } catch (err) {
+      this.#fail(err);
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -174,31 +202,44 @@ export class RtcPanel implements DevicePanel {
  *
  * A rate computed over ten seconds from a clock that counts hundredths can be
  * out by a thousand ppm purely from quantisation, so quoting it to one decimal
- * would be a lie told precisely.
+ * would be a lie told precisely. The summary is what shows; the detail is the
+ * tooltip, because the reasoning is worth having but not worth a paragraph on
+ * screen at all times.
  */
-function describeDrift(state: RtcState): string {
+function describeDrift(state: RtcState): { summary: string; detail: string } {
   if (state.driftPpm === null || state.resolutionPpm === null || state.elapsedS < 2) {
-    return "Measuring drift… the rate needs two readings some time apart.";
+    return {
+      summary: "",
+      detail: "A drift rate needs two readings some time apart. Leave it running.",
+    };
   }
 
   const elapsed = formatDuration(state.elapsedS);
   const resolution = state.resolutionPpm;
   if (Math.abs(state.driftPpm) < resolution) {
-    return (
-      `No drift resolvable yet: ${elapsed} of observation resolves about ` +
-      `±${resolution.toFixed(0)} ppm, and the measurement is inside that. ` +
-      `Leave it running — the bound improves in proportion to the time.`
-    );
+    return {
+      summary: "",
+      detail:
+        `No drift resolvable yet: ${elapsed} of observation resolves about ` +
+        `±${resolution.toFixed(0)} ppm, and the measurement is inside that. ` +
+        `Leave it running — the bound improves in proportion to the time.`,
+    };
   }
 
   const perDay = (state.driftPpm * 86400) / 1e6;
-  return (
-    `Drifting ${state.driftPpm > 0 ? "fast" : "slow"} by ` +
-    `${Math.abs(state.driftPpm).toFixed(resolution < 1 ? 2 : 0)} ppm ` +
-    `(±${resolution.toFixed(resolution < 1 ? 2 : 0)}) over ${elapsed} — ` +
-    `about ${Math.abs(perDay).toFixed(1)} s/day, ` +
-    `${Math.abs((perDay * 365) / 60).toFixed(0)} min/year.`
-  );
+  const digits = resolution < 1 ? 2 : 0;
+  return {
+    summary:
+      `Drifting ${state.driftPpm > 0 ? "fast" : "slow"} by ` +
+      `${Math.abs(state.driftPpm).toFixed(digits)} ppm — ` +
+      `about ${Math.abs(perDay).toFixed(1)} s/day.`,
+    detail:
+      `${Math.abs(state.driftPpm).toFixed(digits)} ±${resolution.toFixed(digits)} ppm ` +
+      `measured over ${elapsed}, which works out at ` +
+      `${Math.abs((perDay * 365) / 60).toFixed(0)} min/year. The bound is what ` +
+      `one tick of this part's resolution looks like over that long, and it ` +
+      `improves in proportion to the time.`,
+  };
 }
 
 function formatDuration(seconds: number): string {
