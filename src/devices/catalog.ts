@@ -1,4 +1,5 @@
 import type { DevicePanel, DeviceSession } from "./panel.ts";
+import { As5600Panel } from "../ui/panels/as5600.ts";
 import { HygrometerPanel } from "../ui/panels/hygrometer.ts";
 import { As7341Panel } from "../ui/panels/as7341.ts";
 import { EepromPanel } from "../ui/panels/eeprom.ts";
@@ -59,6 +60,23 @@ export const DEVICES: DeviceEntry[] = [
     addresses: [0x44, 0x45],
     library: "adafruit_circuitpython_sht4x",
     create: (session) => new HygrometerPanel(session),
+  },
+  {
+    id: "hdc302x",
+    name: "HDC3022 / HDC302x",
+    description: "TI precision temperature and humidity, with heater",
+    // Shares 0x44 with the SHT4x; the ADDR pins reach 0x47.
+    addresses: [0x44, 0x45, 0x46, 0x47],
+    library: "adafruit_circuitpython_hdc302x",
+    create: (session) => new HygrometerPanel(session),
+  },
+  {
+    id: "as5600",
+    name: "AS5600 magnetic encoder",
+    description: "12-bit rotary position, with magnet placement diagnostics",
+    addresses: [0x36],
+    library: "adafruit_circuitpython_as5600",
+    create: (session) => new As5600Panel(session),
   },
   {
     id: "as7341",

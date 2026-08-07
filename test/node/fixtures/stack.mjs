@@ -17,6 +17,8 @@ import { VirtualEeprom } from "../../../src/hid/devices/eeprom.ts";
 import { VirtualPa1010d } from "../../../src/hid/devices/pa1010d.ts";
 import { VirtualRv1805 } from "../../../src/hid/devices/rv1805.ts";
 import { VirtualSht4x } from "../../../src/hid/devices/sht4x.ts";
+import { VirtualHdc302x } from "../../../src/hid/devices/hdc302x.ts";
+import { VirtualAs5600 } from "../../../src/hid/devices/as5600.ts";
 import { PY_ROOT, bootstrapSource } from "../../../src/worker/bootstrap.ts";
 import { Serializer } from "../../../src/worker/serialize.ts";
 
@@ -82,6 +84,22 @@ export function chipWithSht4x(options = {}) {
   const sensor = new VirtualSht4x(options);
   chip.attach(sensor);
   return { chip, sensor };
+}
+
+/** A chip with one HDC302x on it. */
+export function chipWithHdc302x(options = {}) {
+  const chip = new Mcp2221Emulator();
+  const sensor = new VirtualHdc302x(options);
+  chip.attach(sensor);
+  return { chip, sensor };
+}
+
+/** A chip with one AS5600 on it. */
+export function chipWithEncoder(options = {}) {
+  const chip = new Mcp2221Emulator();
+  const encoder = new VirtualAs5600(options);
+  chip.attach(encoder);
+  return { chip, encoder };
 }
 
 /** A chip with one RV-1805 on it. */

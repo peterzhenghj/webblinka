@@ -1,3 +1,4 @@
+import { withCrcs } from "./crc8.ts";
 import type { VirtualI2cDevice } from "../i2c-device.ts";
 
 /**
@@ -129,26 +130,4 @@ export class VirtualSht4x implements VirtualI2cDevice {
       rawH & 0xff,
     ]);
   }
-}
-
-/** Interleave Sensirion's CRC-8 after each pair of bytes. */
-function withCrcs(bytes: number[]): Uint8Array {
-  const out: number[] = [];
-  for (let i = 0; i < bytes.length; i += 2) {
-    const pair = [bytes[i] ?? 0, bytes[i + 1] ?? 0];
-    out.push(...pair, crc8(pair));
-  }
-  return Uint8Array.from(out);
-}
-
-/** CRC-8, polynomial 0x31, initialised to 0xff. Sensirion's, and the library's. */
-function crc8(bytes: number[]): number {
-  let crc = 0xff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) {
-      crc = crc & 0x80 ? ((crc << 1) ^ 0x31) & 0xff : (crc << 1) & 0xff;
-    }
-  }
-  return crc;
 }

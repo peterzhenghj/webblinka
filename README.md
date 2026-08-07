@@ -118,6 +118,21 @@ shape of an adapter UI right.
     100% until it clears. A pulse drives both off, at the cost of warming the
     die, so the panel counts down how long the temperature is still measuring
     the heater rather than the room.
+  - **HDC3022 / HDC302x** — TI's precision part, on the same shared panel as
+    the AHT10 and SHT45. Adding it was a driver and no UI at all, which was the
+    point of the refactor. Its heater *latches* rather than pulsing, so closing
+    the panel puts it out — a forgotten one goes on warming the die long after
+    the tab has gone.
+  - **AS5600 magnetic encoder** — a dial, with the magnet's health above it.
+    That ordering is the whole point: the part reports a clean number between 0
+    and 360 whether the magnet is well placed, too far, too close, or *absent*,
+    and in that last case it is reporting noise while looking exactly like a
+    working encoder. The status bits and the automatic gain are the only things
+    that say otherwise — the chip winds the gain up as the field weakens, so a
+    saturated figure means the gap is wrong in one direction or the other — and
+    when they do, the dial greys rather than staying authoritative. Turn
+    counting is the driver's job, since the chip wraps at 360 and has no idea
+    how many times it has been round.
   - **AS7341 spectral sensor** — the eight visible channels drawn as a
     spectrum, each bar at its own wavelength's colour, plus clear and near-IR.
     Plotted in *basic counts* — raw divided by gain and integration time —

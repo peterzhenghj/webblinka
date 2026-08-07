@@ -52,6 +52,8 @@ REQUIREMENTS = [
     "adafruit-circuitpython-ahtx0==1.0.30",  # AHT10/AHT20/AHT21/DHT20
     "adafruit-circuitpython-as7341==1.2.27",  # 11-channel spectral sensor
     "adafruit-circuitpython-sht4x==1.0.27",  # SHT40/41/43/45
+    "adafruit-circuitpython-hdc302x==1.0.10",  # HDC3020/3021/3022
+    "adafruit-circuitpython-as5600==1.0.3",  # magnetic rotary encoder
     "adafruit-circuitpython-register==1.10.4",  # dep of as7341
 ]
 

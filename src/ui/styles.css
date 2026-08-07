@@ -580,6 +580,51 @@ button.inline {
   color: var(--error);
 }
 
+/* -------------------------------------------------------------------- dial */
+
+.dial {
+  max-width: 13rem;
+}
+
+.dial-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Greyed when the magnet is wrong: the needle would otherwise look every bit
+   as authoritative while pointing at noise. */
+.dial-svg.unusable {
+  opacity: 0.4;
+}
+
+.dial-face {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.dial-tick {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.dial-needle {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.dial-hub {
+  fill: var(--accent);
+}
+
+.dial-label {
+  fill: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
 /* ---------------------------------------------------------------- spectrum */
 
 .spectrum {
