@@ -67,3 +67,4 @@ def _load_handlers() -> None:
     from .drivers import rtc  # noqa: F401
     from .drivers import sht4x  # noqa: F401
     from .drivers import tsl2591  # noqa: F401
+    from .drivers import apds9960  # noqa: F401

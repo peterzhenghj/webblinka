@@ -6,6 +6,7 @@ import { Tsl2591Panel } from "../ui/panels/tsl2591.ts";
 import { EepromPanel } from "../ui/panels/eeprom.ts";
 import { RtcPanel } from "../ui/panels/rtc.ts";
 import { GpsPanel } from "../ui/panels/gps.ts";
+import { Apds9960Panel } from "../ui/panels/apds9960.ts";
 
 /**
  * Every I2C device webblinka knows how to drive.
@@ -89,6 +90,14 @@ export const DEVICES: DeviceEntry[] = [
     library: "adafruit_circuitpython_as7341",
     create: (session) => new As7341Panel(session),
   },
+  {
+    id: "apds9960",
+    name: "APDS9960",
+    description: "Proximity, gesture, RGB color and ambient light sensor",
+    addresses: [0x39],
+    library: "adafruit_circuitpython_apds9960",
+    create: (session) => new Apds9960Panel(session),
+},
   {
     id: "tsl2591",
     name: "TSL2591 light sensor",
