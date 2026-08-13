@@ -30,15 +30,9 @@ export class Apds9960Panel implements DevicePanel {
   readonly #proximityValue = el("dd", {}, [el("span", { text: "—" })]);
   readonly #gestureValue = el("dd", {}, [el("span", { text: "—" })]);
   readonly #colorValue = el("dd", {}, [el("span", { text: "—" })]);
-  readonly #colorPreview = el("div", {
-    style: "width:48px;height:48px;border-radius:4px;border:1px solid var(--border);",
-  });
-  readonly #proxBar = el("div", {
-    style: "height:8px;background:var(--accent);border-radius:2px;transition:width 0.2s;",
-  });
-  readonly #proxTrack = el("div", {
-    style: "width:100%;height:8px;background:var(--surface-2);border-radius:2px;",
-  });
+  readonly #colorPreview: HTMLDivElement;
+  readonly #proxBar: HTMLDivElement;
+  readonly #proxTrack: HTMLDivElement;
   #timer: number | null = null;
   #polling = false;
 
@@ -47,15 +41,16 @@ export class Apds9960Panel implements DevicePanel {
     const p = panel("APDS9960");
     this.root = p.root;
 
-    
+
     const proxToggle = this.#toggle("Proximity", "enable_proximity", true);
     const colorToggle = this.#toggle("Color", "enable_color", true);
     const gestureToggle = this.#toggle("Gesture", "enable_gesture", false);
 
-    
     const gainSelect = el("select") as HTMLSelectElement;
     for (let i = 0; i < 4; i++) {
-      gainSelect.append(el("option", { value: String(i), text: GAIN_LABELS[i] }));
+      gainSelect.append(
+        el("option", { value: String(i), text: GAIN_LABELS[i]! }),
+      );
     }
     gainSelect.addEventListener("change", () =>
       void this.#send("set_color_gain", [Number(gainSelect.value)]),
@@ -67,24 +62,32 @@ export class Apds9960Panel implements DevicePanel {
       proxToggle,
       colorToggle,
       gestureToggle,
-      el("label", { class: "field" }, [el("span", { text: "Gain" }), gainSelect]),
+      el("label", { class: "field" }, [
+        el("span", { text: "Gain" }),
+        gainSelect,
+      ]),
     );
 
-    
     const facts = el("dl", { class: "facts" });
     facts.append(el("dt", { text: "Proximity" }), this.#proximityValue);
     facts.append(el("dt", { text: "Gesture" }), this.#gestureValue);
     facts.append(el("dt", { text: "Color" }), this.#colorValue);
 
-    this.#proxTrack.append(this.#proxBar);
+    this.#proxBar = el("div", { class: "lux-gauge-fill" });
+    this.#proxTrack = el("div", { class: "lux-gauge" }, [this.#proxBar]);
+    this.#colorPreview = el("div", { class: "dial-face" });
+
+    const rightCol = el("div", {}, [
+      el("p", { class: "caption", text: "Proximity" }),
+      this.#proxTrack,
+      el("p", { class: "caption", text: "Color preview" }),
+      this.#colorPreview,
+    ]);
 
     p.body.append(
       el("div", { class: "gps-columns" }, [
         el("div", {}, [facts]),
-        el("div", { style: "display:flex;flex-direction:column;gap:12px;" }, [
-          el("div", {}, [el("p", { class: "caption", text: "Proximity" }), this.#proxTrack]),
-          el("div", {}, [el("p", { class: "caption", text: "Color preview" }), this.#colorPreview]),
-        ]),
+        rightCol,
       ]),
     );
   }
@@ -103,7 +106,7 @@ export class Apds9960Panel implements DevicePanel {
   #toggle(label: string, command: string, initial: boolean): HTMLLabelElement {
     const input = el("input", { type: "checkbox", checked: initial }) as HTMLInputElement;
     input.addEventListener("change", () => void this.#send(command, [input.checked]));
-    return el("label", { class: "field", style: "gap:4px;" }, [
+    return el("label", { class: "field" }, [
       input,
       el("span", { text: label }),
     ]);
@@ -130,7 +133,6 @@ export class Apds9960Panel implements DevicePanel {
   }
 
   #render(state: Apds9960State): void {
-    
     if (state.proximity !== null) {
       const pct = (state.proximity / 255) * 100;
       this.#proxBar.style.width = `${pct}%`;
@@ -141,17 +143,15 @@ export class Apds9960Panel implements DevicePanel {
       this.#proximityValue.textContent = "off";
     }
 
-    
     if (state.gesture !== null) {
       this.#gestureValue.textContent = GESTURE_NAMES[state.gesture] || `code ${state.gesture}`;
     } else {
       this.#gestureValue.textContent = state.gestureEnabled ? "—" : "disabled";
     }
 
-    
+  
     if (state.color) {
       const { r, g, b, c } = state.color;
-      
       const rr = (r >> 8) & 0xff;
       const gg = (g >> 8) & 0xff;
       const bb = (b >> 8) & 0xff;

@@ -33,7 +33,6 @@ export class VirtualApds9960 implements VirtualI2cDevice {
   #t0 = Date.now();
 
   constructor() {
-  
     this.#regs[REG_ATIME] = 0xff;
     this.#regs[REG_WTIME] = 0xff;
     this.#regs[REG_PERS] = 0x11;
@@ -47,11 +46,9 @@ export class VirtualApds9960 implements VirtualI2cDevice {
 
   write(data: Uint8Array): void {
     if (data.length === 0) return;
-
-    this.#pointer = data[0];
-   
+    this.#pointer = data[0]!;
     for (let i = 1; i < data.length; i++) {
-      this.#regs[this.#pointer] = data[i];
+      this.#regs[this.#pointer] = data[i]!;
       this.#pointer = (this.#pointer + 1) & 0xff;
     }
   }
@@ -66,12 +63,10 @@ export class VirtualApds9960 implements VirtualI2cDevice {
   }
 
   #readReg(addr: number): number {
-
     if (addr === REG_PDATA) {
       const elapsed = (Date.now() - this.#t0) / 1000;
       return 128 + Math.round(Math.sin(elapsed * 0.5) * 60);
     }
-  
     if (addr === REG_CDATAL) return 0x00;
     if (addr === REG_CDATAH) return 0x20;
     if (addr === REG_RDATAL) return 0x80;
@@ -80,15 +75,13 @@ export class VirtualApds9960 implements VirtualI2cDevice {
     if (addr === REG_GDATAH) return 0x0c;
     if (addr === REG_BDATAL) return 0x40;
     if (addr === REG_BDATAH) return 0x08;
-    
     if (addr === REG_GSTATUS) return 0x00;
     if (addr === REG_GFLVL) return 0x00;
-    
     if (addr === REG_STATUS) {
       const enable = this.#regs[REG_ENABLE] ?? 0;
       let s = 0;
-      if (enable & 0x04) s |= 0x20; // PVALID
-      if (enable & 0x02) s |= 0x10; // AVALID
+      if (enable & 0x04) s |= 0x20;
+      if (enable & 0x02) s |= 0x10;
       return s;
     }
     return this.#regs[addr] ?? 0;
