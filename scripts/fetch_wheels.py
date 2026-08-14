@@ -56,7 +56,7 @@ REQUIREMENTS = [
     "adafruit-circuitpython-as5600==1.0.3",  # magnetic rotary encoder
     "adafruit-circuitpython-tsl2591==1.4.8",  # high-dynamic-range light sensor
     "adafruit-circuitpython-register==1.10.4",  # dep of as7341
-    "adafruit-circuitpython-apds9960==1.1.9",  # APDS9960 proximity/gesture/color
+    "adafruit-circuitpython-apds9960==3.1.19",  # APDS9960 proximity/gesture/color
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
