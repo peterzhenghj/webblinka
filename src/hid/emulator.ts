@@ -119,6 +119,7 @@ export function defaultRig(): Mcp2221Emulator {
   // overflow -- rather than on a comfortable mid-scale reading.
   chip.attach(new VirtualTsl2591({ lux: 3200, infraredFraction: 0.42 }));
   chip.attach(new VirtualApds9960());
+  console.log("APDS9960 attached, bus devices:", chip.devices.map(d => ({name: d.name, address: d.address})));
   chip.attach(new VirtualEeprom({ contents: demoEepromContents() }));
   // A few seconds out and running conspicuously fast. A real RV-1805 is within
   // a couple of ppm, which takes an hour of watching to resolve at this part's

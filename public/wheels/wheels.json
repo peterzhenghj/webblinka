@@ -20,7 +20,8 @@
     "adafruit-circuitpython-hdc302x==1.0.10",
     "adafruit-circuitpython-as5600==1.0.3",
     "adafruit-circuitpython-tsl2591==1.4.8",
-    "adafruit-circuitpython-register==1.10.4"
+    "adafruit-circuitpython-register==1.10.4",
+    "adafruit-circuitpython-apds9960==3.1.19"
   ],
   "files": [
     "Adafruit_PureIO-1.1.11-py3-none-any.whl",
