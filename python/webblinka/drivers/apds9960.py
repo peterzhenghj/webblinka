@@ -25,6 +25,14 @@ class Apds9960(Driver):
         from adafruit_apds9960.apds9960 import APDS9960
 
         self._sensor = APDS9960(self.bus, address=self.address)
+        device_id = self._sensor._read(0x91)  
+        if device_id != 0xAB:
+            self._sensor = None
+            raise RuntimeError(
+                f"APDS9960 ID mismatch: expected 0xAB, got 0x{device_id:02x}. "
+                "This address may be an AS7341 or another device."
+            )
+
         self._sensor.enable_proximity = True
         self._sensor.enable_color = True
         self._last_gesture = 0
